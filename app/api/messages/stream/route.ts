@@ -1,8 +1,4 @@
-import { getSession } from "@/lib/auth/session";
-import { refreshSession } from "@/lib/auth/accounts";
-import { getDb } from "@/lib/db/client";
-import { fail } from "@/lib/api/respond";
-import type { Session } from "@/lib/auth/types";
+import { canSeeThread, liveSession, viewerSide } from "@/lib/api/thread-access";
 import type { Message, MessageThread } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -19,13 +15,17 @@ const STREAM_LIFETIME_MS = (maxDuration - 20) * 1000;
 const HEARTBEAT_MS = 25_000;
 
 /**
- * Live messages, as server-sent events.
+ * Live messaging, as server-sent events.
  *
- * Holds a MongoDB change stream on `messages` for as long as the browser keeps
- * the connection, and forwards each newly inserted message — with its thread —
- * to this session *only if* the session may see that thread: a customer or
- * provider their own support thread, the admin every thread. That check runs
- * per event, against the thread as stored, so nothing leaks between parties.
+ * Holds one MongoDB change stream (on `messages` and `typing`) for as long as
+ * the browser keeps the connection, and forwards three kinds of event — each
+ * only if this session may see the thread (a customer or provider their own
+ * support thread, the admin every thread), checked per event against the
+ * thread as stored:
+ *
+ *   message — a new message, with its thread
+ *   read    — the other end read one of your messages (✓✓)
+ *   typing  — the other end is typing
  *
  * Change streams need a replica set (Atlas, or a local `mongod --replSet`). On a
  * standalone server the stream sends `event: unsupported` and closes, and the
@@ -36,15 +36,25 @@ const HEARTBEAT_MS = 25_000;
  * re-fetches state whenever it reconnects.
  */
 export async function GET(request: Request) {
-  const cookieSession = await getSession();
-  const session = cookieSession ? await refreshSession(cookieSession) : null;
-  if (!session) return fail("unauthenticated", "লগ ইন করুন।");
-
-  const db = await getDb();
-  if (!db) return fail("unavailable", "ডেটাবেস পাওয়া যায়নি।");
+  const live = await liveSession();
+  if ("error" in live) return live.error;
+  const { session, db } = live;
 
   const encoder = new TextEncoder();
   let cleanup: () => Promise<void> = async () => {};
+
+  // Thread visibility doesn't change during a connection; typing pings are
+  // frequent, so don't look the same thread up every few seconds.
+  const threads = new Map<string, MessageThread | null>();
+  async function threadFor(id: string): Promise<MessageThread | null> {
+    if (!threads.has(id)) {
+      const t = (await db
+        .collection("threads")
+        .findOne({ _id: id } as never)) as unknown as MessageThread | null;
+      threads.set(id, t && canSeeThread(session, t) ? t : null);
+    }
+    return threads.get(id) ?? null;
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -54,9 +64,18 @@ export async function GET(request: Request) {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
 
-      const changes = db.collection("messages").watch(
-        [{ $match: { operationType: "insert" } }],
-        { fullDocument: "default" },
+      const changes = db.watch(
+        [
+          {
+            $match: {
+              "ns.coll": { $in: ["messages", "typing"] },
+              operationType: { $in: ["insert", "update", "replace"] },
+            },
+          },
+        ],
+        // Updates carry only the changed fields; look the document up so a
+        // receipt knows which thread it belongs to.
+        { fullDocument: "updateLookup" },
       );
       const heartbeat = setInterval(() => {
         if (!closed) controller.enqueue(encoder.encode(": ping\n\n"));
@@ -79,13 +98,30 @@ export async function GET(request: Request) {
       request.signal.addEventListener("abort", () => void cleanup());
 
       changes.on("change", async (change) => {
-        if (change.operationType !== "insert") return;
-        const message = change.fullDocument as unknown as Message;
-        const thread = (await db
-          .collection("threads")
-          .findOne({ _id: message.threadId } as never)) as unknown as MessageThread | null;
-        if (!thread || !canSee(session, thread)) return;
-        send("message", { message, thread });
+        if (!("ns" in change) || !("fullDocument" in change) || !change.fullDocument) return;
+        const coll = change.ns.coll;
+
+        if (coll === "messages") {
+          const message = change.fullDocument as unknown as Message;
+          const thread = await threadFor(message.threadId);
+          if (!thread) return;
+          if (change.operationType === "insert") {
+            send("message", { message, thread });
+          } else if (message.isRead) {
+            send("read", {
+              threadId: thread._id,
+              messageId: message._id,
+              readAt: message.readAt ?? null,
+            });
+          }
+          return;
+        }
+
+        // typing — relay the *other* end's pings only.
+        const ping = change.fullDocument as unknown as { threadId: string; side: string };
+        const thread = await threadFor(ping.threadId);
+        if (!thread || viewerSide(session, thread) === ping.side) return;
+        send("typing", { threadId: thread._id, side: ping.side });
       });
 
       changes.on("error", (error: { code?: number; message?: string }) => {
@@ -112,13 +148,4 @@ export async function GET(request: Request) {
       "X-Accel-Buffering": "no",
     },
   });
-}
-
-/** Same rule as the read scope in lib/db/scope.ts, applied to one thread. */
-function canSee(session: Session, thread: MessageThread): boolean {
-  if (session.roles.includes("admin")) return true;
-  if (thread.kind === "customer") {
-    return Boolean(session.customerId && thread.customerId === session.customerId);
-  }
-  return Boolean(session.providerId && thread.providerId === session.providerId);
 }

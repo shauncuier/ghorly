@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Headset, MessageSquare, Send } from "lucide-react";
+import { Check, CheckCheck, Headset, MessageSquare, Send } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,8 @@ import { useMutations } from "@/lib/api/mutations";
 import { formatTime } from "@/lib/format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EMPTY } from "@/lib/strings";
+import { useIsTyping } from "@/lib/store/context";
+import { sideOfMessage, sideOfViewer } from "@/lib/store/support";
 import type { MessageThread } from "@/lib/types";
 
 type Viewer = "customer" | "provider" | "admin";
@@ -118,18 +120,47 @@ function AdminInbox({ threads }: { threads: MessageThread[] }) {
 function Conversation({ as, thread }: { as: Viewer; thread: MessageThread | null }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const { sendMessage, markThreadRead } = useMutations();
+  const { sendMessage, markThreadRead, markMessagesRead, sendTyping } = useMutations();
   const endRef = useRef<HTMLDivElement>(null);
+  const lastPing = useRef(0);
   const threadId = thread?._id ?? null;
   const { data: messages } = useMessages(threadId);
+  const mySide = sideOfViewer(as);
+  const otherTyping = useIsTyping(threadId);
 
   useEffect(() => {
     if (threadId) markThreadRead(threadId);
-  }, [threadId, markThreadRead]);
+  }, [threadId, markThreadRead, messages?.length]);
+
+  // Read receipts: anything the other end wrote that is on screen, in a tab
+  // that is actually visible, counts as read — once per message.
+  useEffect(() => {
+    if (!threadId) return;
+    const markVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const unseen = (messages ?? [])
+        .filter((m) => sideOfMessage(m) !== mySide && !m.isRead)
+        .map((m) => m._id);
+      void markMessagesRead(threadId, unseen);
+    };
+    markVisible();
+    document.addEventListener("visibilitychange", markVisible);
+    return () => document.removeEventListener("visibilitychange", markVisible);
+  }, [threadId, messages, mySide, markMessagesRead]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages?.length]);
+  }, [messages?.length, otherTyping]);
+
+  function onDraftChange(value: string) {
+    setDraft(value);
+    // At most one ping every 3 s while there is something typed.
+    if (!threadId || !value.trim()) return;
+    const now = Date.now();
+    if (now - lastPing.current < 3000) return;
+    lastPing.current = now;
+    sendTyping(threadId);
+  }
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -183,11 +214,12 @@ function Conversation({ as, thread }: { as: Viewer; thread: MessageThread | null
                     <p className="text-sm">{m.bnBody}</p>
                     <span
                       className={cn(
-                        "self-end text-xs tabular",
+                        "flex items-center gap-1 self-end text-xs tabular",
                         mine ? "text-teal-100" : "text-fg-tertiary",
                       )}
                     >
                       {formatTime(m.sentAt)}
+                      {mine ? <Receipt read={m.isRead} /> : null}
                     </span>
                   </div>
                 </li>
@@ -195,13 +227,21 @@ function Conversation({ as, thread }: { as: Viewer; thread: MessageThread | null
             })}
           </ul>
         )}
+        {otherTyping ? (
+          <div className="mt-3 flex justify-start" aria-live="polite">
+            <span className="flex items-center gap-2 rounded-xl bg-surface-muted px-4 py-2.5 text-sm text-fg-tertiary">
+              <TypingDots />
+              {as === "admin" ? "টাইপ করছে…" : "ঘরলি টিম টাইপ করছে…"}
+            </span>
+          </div>
+        ) : null}
         <div ref={endRef} />
       </div>
 
       <form onSubmit={send} className="flex items-center gap-2.5 border-t border-border-subtle p-4">
         <input
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => onDraftChange(e.target.value)}
           placeholder="বার্তা লিখুন…"
           aria-label="বার্তা লিখুন"
           className="h-11 flex-1 rounded-md border border-border bg-surface px-3.5 text-base text-fg placeholder:text-fg-disabled focus:border-border-focus focus:shadow-focus focus:outline-none"
@@ -212,6 +252,29 @@ function Conversation({ as, thread }: { as: Viewer; thread: MessageThread | null
         </Button>
       </form>
     </>
+  );
+}
+
+/** ✓ sent · ✓✓ seen by the other end. */
+function Receipt({ read }: { read: boolean }) {
+  return read ? (
+    <CheckCheck className="size-3.5 text-teal-50" aria-label="দেখেছেন" />
+  ) : (
+    <Check className="size-3.5 opacity-80" aria-label="পাঠানো হয়েছে" />
+  );
+}
+
+function TypingDots() {
+  return (
+    <span className="flex items-center gap-0.5" aria-hidden="true">
+      {[0, 150, 300].map((delay) => (
+        <span
+          key={delay}
+          className="size-1.5 animate-bounce rounded-full bg-fg-tertiary"
+          style={{ animationDelay: `${delay}ms` }}
+        />
+      ))}
+    </span>
   );
 }
 

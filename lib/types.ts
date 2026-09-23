@@ -287,7 +287,10 @@ export interface Message extends Doc {
   senderId: string;
   bnBody: string;
   sentAt: string;
+  /** Read by the other end of the thread (drives the ✓✓ receipt). */
   isRead: boolean;
+  /** When the other end read it — naive-local, set with `isRead`. */
+  readAt?: string | null;
 }
 
 /* ==========================================================================

@@ -17,6 +17,7 @@ import { reducer } from "@/lib/store/reducer";
 import { buildEmptyState } from "@/lib/store/initial-state";
 import { toast } from "@/lib/toast";
 import type { Message, MessageThread, Role } from "@/lib/types";
+import { sideOfMessage, sideOfViewer } from "@/lib/store/support";
 
 const STORAGE_KEY = "ghorly.state.v1";
 
@@ -45,6 +46,7 @@ const LOCAL_ONLY: ReadonlySet<Action["type"]> = new Set([
   "TOGGLE_FAVORITE",
   "MARK_THREAD_READ",
   "RECEIVE_MESSAGE",
+  "MESSAGES_READ",
   "RESET_DEMO",
   "SET_ROLE",
 ]);
@@ -91,6 +93,10 @@ const StateContext = createContext<AppState | null>(null);
 const DispatchContext = createContext<Dispatch | null>(null);
 const SourceContext = createContext<DataSource>("loading");
 const SessionContext = createContext<ServerSession | null>(null);
+const TypingContext = createContext<Record<string, number>>({});
+
+/** How long one typing ping keeps "typing…" on screen. Pings come every ~3 s. */
+const TYPING_VISIBLE_MS = 5000;
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   // Empty, not seeded. Deterministic either way, so the server HTML and the
@@ -211,9 +217,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // updates and the unread badge ticks without a reload. Keyed on the account
   // and role, so switching role reconnects under the new identity.
   const liveKey = serverSession ? `${serverSession.accountId}:${serverSession.activeRole}` : null;
+  // threadId → when the other end's "typing…" should disappear (ms epoch).
+  const [typingUntil, setTypingUntil] = useState<Record<string, number>>({});
   useEffect(() => {
     if (!liveKey || typeof EventSource === "undefined") return;
     const viewer = sessionRef.current?.activeRole;
+    const mySide = viewer ? sideOfViewer(viewer) : null;
 
     let source: EventSource | null = new EventSource("/api/messages/stream");
     let poll: number | null = null;
@@ -228,9 +237,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         type: "RECEIVE_MESSAGE",
         message,
         thread,
-        // Anything not written by the viewer's own side counts as new.
-        unread: message.senderRole !== viewer,
+        // Anything written by the other end counts as new.
+        unread: sideOfMessage(message) !== mySide,
       });
+      // Their message landed — they've stopped typing.
+      setTypingUntil((prev) => {
+        if (!(thread._id in prev)) return prev;
+        const next = { ...prev };
+        delete next[thread._id];
+        return next;
+      });
+    });
+
+    // ✓✓ — the other end read one of our messages.
+    source.addEventListener("read", (e) => {
+      const { messageId, readAt } = JSON.parse((e as MessageEvent<string>).data) as {
+        messageId: string;
+        readAt: string | null;
+      };
+      rawDispatch({ type: "MESSAGES_READ", messageIds: [messageId], readAt: readAt ?? "" });
+    });
+
+    // The server only relays the other end's pings; each keeps the
+    // indicator up for a few seconds.
+    source.addEventListener("typing", (e) => {
+      const { threadId } = JSON.parse((e as MessageEvent<string>).data) as { threadId: string };
+      setTypingUntil((prev) => ({ ...prev, [threadId]: Date.now() + TYPING_VISIBLE_MS }));
     });
 
     source.addEventListener("ready", () => {
@@ -325,7 +357,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       <DispatchContext.Provider value={dispatch}>
         <SourceContext.Provider value={source}>
           <SessionContext.Provider value={serverSession}>
-            {children}
+            <TypingContext.Provider value={typingUntil}>{children}</TypingContext.Provider>
           </SessionContext.Provider>
         </SourceContext.Provider>
       </DispatchContext.Provider>
@@ -368,3 +400,19 @@ export function clearPersistedState() {
 }
 
 export type { Action };
+
+/**
+ * Is the other end typing in this thread right now? Re-renders by itself when
+ * the indicator lapses, so a stopped typist doesn't stay "typing…" forever.
+ */
+export function useIsTyping(threadId: string | null | undefined): boolean {
+  const until = useContext(TypingContext)[threadId ?? ""] ?? 0;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const left = until - Date.now();
+    if (left <= 0) return;
+    const id = window.setTimeout(() => setNow(Date.now()), left + 50);
+    return () => window.clearTimeout(id);
+  }, [until]);
+  return until > now;
+}

@@ -80,4 +80,6 @@ export const AUTH_INDEXES: {
   // TTL: Mongo deletes expired challenges on its own, so stale codes cannot
   // pile up or be replayed.
   { collection: "otpChallenges", spec: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
+  // Typing indicators are ephemeral: each ping expires itself shortly after.
+  { collection: "typing", spec: { expireAt: 1 }, options: { expireAfterSeconds: 0 } },
 ];

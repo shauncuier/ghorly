@@ -426,6 +426,33 @@ export function useMutations() {
       [dispatch, counters],
     ),
 
+    /**
+     * Read receipts: shows them as read here at once, then records it so the
+     * sender's ✓ turns into ✓✓ (the stream carries it to them).
+     */
+    markMessagesRead: useCallback(
+      async (threadId: string, messageIds: string[]) => {
+        if (messageIds.length === 0) return;
+        dispatch({ type: "MESSAGES_READ", messageIds, readAt: currentNaiveLocal() });
+        await fetch("/api/messages/read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId }),
+          keepalive: true,
+        }).catch(() => {});
+      },
+      [dispatch],
+    ),
+
+    /** "I'm typing" — fire-and-forget; the caller throttles it. */
+    sendTyping: useCallback((threadId: string) => {
+      void fetch("/api/messages/typing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId }),
+      }).catch(() => {});
+    }, []),
+
     markThreadRead: useCallback(
       (threadId: string) => {
         dispatch({ type: "MARK_THREAD_READ", threadId });

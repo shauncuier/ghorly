@@ -110,8 +110,10 @@ function postToSupport(
       senderId: opts.senderId,
       bnBody: opts.body,
       sentAt: opts.at,
-      // The sender has obviously read their own message.
-      isRead: opts.senderRole !== "system",
+      // Unread until the *other* end of the thread opens it — that is what
+      // the sender's read receipt shows.
+      isRead: false,
+      readAt: null,
       createdAt: opts.at,
       updatedAt: opts.at,
     },
@@ -699,6 +701,20 @@ export function reducer(state: AppState, action: Action): AppState {
           },
         },
       };
+    }
+
+    case "MESSAGES_READ": {
+      // Pushed by the stream (or applied optimistically by the reader).
+      const messages = { ...state.entities.messages };
+      let changed = false;
+      for (const id of action.messageIds) {
+        const m = messages[id];
+        if (m && !m.isRead) {
+          messages[id] = { ...m, isRead: true, readAt: action.readAt };
+          changed = true;
+        }
+      }
+      return changed ? { ...state, entities: { ...state.entities, messages } } : state;
     }
 
     case "MARK_THREAD_READ": {

@@ -79,6 +79,8 @@ export type Action =
   | { type: "MARK_THREAD_READ"; threadId: string }
   // Pushed by /api/messages/stream — browser-only, never sent to the server.
   | { type: "RECEIVE_MESSAGE"; message: Message; thread: MessageThread; unread: boolean }
+  // Read receipts — browser-only; the server records them via /api/messages/read.
+  | { type: "MESSAGES_READ"; messageIds: string[]; readAt: string }
   /* admin */
   // The admin agreed a price with a provider offline and now offers it to the
   // customer. Replaces any quotation still open on the request.
