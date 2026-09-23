@@ -189,9 +189,10 @@ export function BookingDetailView({ bookingId }: { bookingId: string }) {
                 </div>
                 <div className="flex gap-2">
                   <Button asChild variant="secondary" size="sm">
+                    {/* No direct line to the professional: the team relays. */}
                     <Link href="/customer/messages">
                       <MessageSquare aria-hidden="true" />
-                      {ACTIONS.sendMessage}
+                      ঘরলি টিমকে লিখুন
                     </Link>
                   </Button>
                   <Button asChild variant="ghost" size="sm">
@@ -208,19 +209,8 @@ export function BookingDetailView({ bookingId }: { bookingId: string }) {
           <h2 className="text-lg font-semibold text-fg">খরচের হিসাব</h2>
 
           <dl className="flex flex-col gap-3">
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-sm text-fg-secondary">সেবার দাম</dt>
-              <dd className="text-sm font-medium tabular text-fg">
-                {formatBdt(booking.amount - booking.commission)}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-sm text-fg-secondary">প্ল্যাটফর্ম ফি</dt>
-              <dd className="text-sm font-medium tabular text-fg">
-                {formatBdt(booking.commission)}
-              </dd>
-            </div>
-            <Separator />
+            {/* One price: what the team quoted. How it splits between the professional
+                and the platform is between the team and the professional. */}
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-base font-semibold text-fg">মোট</dt>
               <dd className="text-xl font-extrabold tabular text-fg">

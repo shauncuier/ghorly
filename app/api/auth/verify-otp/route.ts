@@ -3,6 +3,7 @@ import {
   defaultRoleFor,
   findOrCreateAccount,
   recordLogin,
+  refreshSession,
   rolesFor,
 } from "@/lib/auth/accounts";
 import { setSessionCookie } from "@/lib/auth/session";
@@ -39,6 +40,15 @@ export async function POST(request: Request) {
   const phone = normalisePhone(phoneParsed.data);
   if (!phone) return fail("invalid", "সঠিক মোবাইল নম্বর দিন।");
 
+  // Per number as well as per IP: the IP comes from a spoofable header, so on
+  // its own it does not bound guesses against one phone.
+  const phoneLimit = rateLimit(
+    `otp-verify:phone:${phone}`,
+    LIMITS.otpVerify.limit,
+    LIMITS.otpVerify.window,
+  );
+  if (!phoneLimit.ok) return rateLimited(phoneLimit.retryAfterSeconds);
+
   try {
     const result = await verifyOtp(phone, codeParsed.data);
     if (!result.ok) {
@@ -51,19 +61,24 @@ export async function POST(request: Request) {
     );
     if (!account) return fail("unavailable", "অ্যাকাউন্ট তৈরি করা যায়নি।");
 
-    if (account.status === "suspended") {
-      return fail("forbidden", "এই অ্যাকাউন্টটি স্থগিত করা হয়েছে।");
-    }
-
-    const roles = rolesFor(account);
-    await setSessionCookie({
+    // Same check every write makes: an account, or the customer/provider
+    // record an admin suspended, cannot sign in.
+    const session = await refreshSession({
       sub: account._id,
       phone: account.phone,
-      roles,
+      roles: rolesFor(account),
       customerId: account.customerId,
       providerId: account.providerId,
       activeRole: defaultRoleFor(account),
+      expiresAt: 0,
     });
+    if (!session) {
+      return fail("forbidden", "এই অ্যাকাউন্টটি স্থগিত করা হয়েছে।");
+    }
+
+    const { expiresAt: _unused, ...claims } = session;
+    void _unused;
+    await setSessionCookie(claims);
 
     await recordLogin(account._id);
 
@@ -72,8 +87,8 @@ export async function POST(request: Request) {
       account: {
         id: account._id,
         bnName: account.bnName,
-        roles,
-        activeRole: defaultRoleFor(account),
+        roles: session.roles,
+        activeRole: session.activeRole,
       },
     });
   } catch (error) {

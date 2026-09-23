@@ -1,6 +1,7 @@
 import type { Action } from "@/lib/store/actions";
 import type { AppState } from "@/lib/store/types";
 import type { Session } from "@/lib/auth/types";
+import { supportThreadFor, threadParty, type SupportKind } from "@/lib/store/support";
 
 /**
  * Who may do what, to which record.
@@ -27,12 +28,74 @@ function isAdmin(s: Session) {
   return s.roles.includes("admin");
 }
 
+type EntityKey = keyof AppState["entities"];
+
+/**
+ * The records an action creates, with the ids the client chose for them.
+ *
+ * Ids are generated in the browser so an optimistic update can navigate to
+ * the new record straight away. But the reducer's `addEntity` writes
+ * `entities[key][id] = …` and the repository upserts it, so an id that is
+ * already taken would *replace* that record — somebody else's address, quote
+ * or message. A create must therefore name an id nobody has.
+ */
+function createdIds(action: Action, state: AppState): [EntityKey, string][] {
+  /**
+   * A support thread id only creates something when the party has no thread
+   * yet; otherwise the reducer posts into the existing one and ignores it.
+   */
+  const newThread = (kind: SupportKind, partyId: string | null | undefined, threadId: string) =>
+    partyId && !supportThreadFor(state.entities, kind, partyId)
+      ? ([["threads", threadId]] as [EntityKey, string][])
+      : [];
+
+  switch (action.type) {
+    case "SUBMIT_REQUEST":
+      return [["requests", action.requestId]];
+    case "ACCEPT_QUOTE": {
+      const quote = state.entities.quotes[action.quoteId];
+      return [
+        ["bookings", action.bookingId],
+        ["payments", action.paymentId],
+        ["messages", action.messageId],
+        ...newThread("provider", quote?.providerId, action.threadId),
+      ];
+    }
+    case "SUBMIT_REVIEW":
+      return [["reviews", action.reviewId]];
+    case "ADD_ADDRESS":
+      return [["addresses", action.address._id]];
+    case "ADD_PAYOUT_METHOD":
+      return [["payoutMethods", action.id]];
+    case "SEND_QUOTATION": {
+      const request = state.entities.requests[action.requestId];
+      return [
+        ["quotes", action.quoteId],
+        ["messages", action.messageId],
+        ...newThread("customer", request?.customerId, action.threadId),
+      ];
+    }
+    case "SEND_MESSAGE":
+      return [["messages", action.messageId]];
+    default:
+      return [];
+  }
+}
+
 export function authorize(
   session: Session | null,
   action: Action,
   state: AppState,
 ): Decision {
   if (!session) return DENY("লগ ইন করুন।");
+
+  for (const [key, id] of createdIds(action, state)) {
+    if (state.entities[key][id]) {
+      // Usually a stale id counter in this browser, not an attack — the client
+      // refreshes on any rejection, which brings its counters up to date.
+      return DENY("তথ্য হালনাগাদ হয়েছে। আবার চেষ্টা করুন।");
+    }
+  }
 
   const customerId = session.customerId;
   const providerId = session.providerId;
@@ -61,9 +124,14 @@ export function authorize(
     case "MARK_THREAD_READ":
       return ALLOW;
 
-    // Wiping the dataset is a demo affordance, never a production one.
+    // Wiping the dataset is a demo affordance, never a production one. It
+    // replaces every collection with the seed, so on any server with a real
+    // database it needs an admin *and* an explicit opt-in — "not production"
+    // alone would let any signed-in user wipe a staging database.
     case "RESET_DEMO":
-      return process.env.NODE_ENV !== "production"
+      return process.env.NODE_ENV !== "production" &&
+        process.env.ALLOW_DEMO_RESET === "true" &&
+        isAdmin(session)
         ? ALLOW
         : DENY("এই কাজটি শুধু ডেভেলপমেন্টে সম্ভব।");
 
@@ -86,7 +154,9 @@ export function authorize(
     case "DECLINE_QUOTE": {
       const quote = state.entities.quotes[action.quoteId];
       if (!quote) return DENY("কোটেশনটি খুঁজে পাওয়া যায়নি।");
-      return ownsCustomer(quote.customerId) || isAdmin(session) ? ALLOW : DENY();
+      if (!ownsCustomer(quote.customerId) && !isAdmin(session)) return DENY();
+      // Only the live quotation can be answered — not one the team replaced.
+      return quote.status === "sent" ? ALLOW : DENY("এই কোটেশন আর খোলা নেই।");
     }
 
     case "CONFIRM_BOOKING":
@@ -142,39 +212,6 @@ export function authorize(
 
     /* ---------------- provider ---------------- */
 
-    case "ACCEPT_REQUEST":
-    case "DECLINE_REQUEST": {
-      if (!providerId) return DENY("পেশাদার হিসেবে লগ ইন করুন।");
-      const request = state.entities.requests[action.requestId];
-      if (!request) return DENY("অনুরোধটি খুঁজে পাওয়া যায়নি।");
-      if (request.status !== "open" && request.status !== "quoted")
-        return DENY("এই অনুরোধটি আর খোলা নেই।");
-
-      // A provider may only quote on work they actually offer, in an area they
-      // actually serve — otherwise the open-request feed is just a list of
-      // every job on the platform.
-      const provider = state.entities.providers[providerId];
-      if (!provider) return DENY();
-      const offersService = provider.activeCategoryIds.includes(request.categoryId);
-      const servesArea =
-        provider.areaId === request.areaId ||
-        provider.serviceAreaIds.includes(request.areaId);
-      if (!offersService || !servesArea)
-        return DENY("এই অনুরোধটি আপনার সেবা বা এলাকার সাথে মেলে না।");
-
-      if (action.type === "ACCEPT_REQUEST" && action.amount <= 0)
-        return DENY("সঠিক দর লিখুন।");
-      return ALLOW;
-    }
-
-    case "WITHDRAW_QUOTE": {
-      const quote = state.entities.quotes[action.quoteId];
-      if (!quote) return DENY("কোটেশনটি খুঁজে পাওয়া যায়নি।");
-      if (quote.status === "accepted")
-        return DENY("গৃহীত কোটেশন প্রত্যাহার করা যায় না।");
-      return ownsProvider(quote.providerId) || isAdmin(session) ? ALLOW : DENY();
-    }
-
     case "START_JOB":
     case "COMPLETE_JOB": {
       const booking = state.entities.bookings[action.bookingId];
@@ -199,18 +236,64 @@ export function authorize(
     /* ---------------- messaging ---------------- */
 
     case "SEND_MESSAGE": {
-      const thread = state.entities.threads[action.threadId];
-      if (!thread) return DENY("কথোপকথনটি খুঁজে পাওয়া যায়নি।");
-      const participant =
-        ownsCustomer(thread.customerId) || ownsProvider(thread.providerId);
-      if (!participant && !isAdmin(session)) return DENY();
-      // You cannot post as the other party.
-      if (action.role === "customer" && !ownsCustomer(thread.customerId) && !isAdmin(session))
-        return DENY();
-      if (action.role === "provider" && !ownsProvider(thread.providerId) && !isAdmin(session))
-        return DENY();
+      // Every conversation is with the Ghorly team. Customers and providers
+      // write only in their own support thread, and never as anyone else;
+      // there is no thread between a customer and a provider to write in.
       if (!action.body.trim()) return DENY("বার্তা খালি রাখা যাবে না।");
+      const thread = state.entities.threads[action.threadId];
+
+      if (action.role === "admin") {
+        if (!isAdmin(session)) return DENY();
+        if (thread) return ALLOW;
+        // Opening a new conversation: it must name a real party who has none.
+        const to = action.to;
+        if (!to) return DENY("কাকে বার্তা পাঠাবেন তা বলুন।");
+        const exists =
+          to.kind === "customer"
+            ? state.entities.customers[to.id]
+            : state.entities.providers[to.id];
+        if (!exists) return DENY("ব্যবহারকারীকে খুঁজে পাওয়া যায়নি।");
+        return supportThreadFor(state.entities, to.kind, to.id)
+          ? DENY("কথোপকথনটি আগেই আছে।")
+          : ALLOW;
+      }
+
+      const own = action.role === "customer" ? customerId : providerId;
+      if (!own) return DENY();
+      if (thread) {
+        return thread.kind === action.role && threadParty(thread) === own
+          ? ALLOW
+          : DENY();
+      }
+      // First message: opens the sender's own thread — once.
+      return supportThreadFor(state.entities, action.role, own)
+        ? DENY("কথোপকথনটি আগেই আছে।")
+        : ALLOW;
+    }
+
+    /* ---------------- admin quotes ---------------- */
+
+    case "SEND_QUOTATION": {
+      if (!isAdmin(session)) return DENY("এটি শুধু প্রশাসকের জন্য।");
+      const request = state.entities.requests[action.requestId];
+      if (!request) return DENY("অনুরোধটি খুঁজে পাওয়া যায়নি।");
+      if (request.status !== "open" && request.status !== "quoted")
+        return DENY("এই অনুরোধটি আর খোলা নেই।");
+      const provider = state.entities.providers[action.providerId];
+      if (!provider || provider.status !== "active")
+        return DENY("এই পেশাদারকে কাজ দেওয়া যাবে না।");
+      if (!provider.activeCategoryIds.includes(request.categoryId))
+        return DENY("এই পেশাদার এই সেবা দেন না।");
+      if (action.providerPayout > action.amount)
+        return DENY("পেশাদারের পাওনা গ্রাহকের দামের বেশি হতে পারে না।");
       return ALLOW;
+    }
+
+    case "WITHDRAW_QUOTE": {
+      if (!isAdmin(session)) return DENY("এটি শুধু প্রশাসকের জন্য।");
+      const quote = state.entities.quotes[action.quoteId];
+      if (!quote) return DENY("কোটেশনটি খুঁজে পাওয়া যায়নি।");
+      return quote.status === "sent" ? ALLOW : DENY("এই কোটেশন আর খোলা নেই।");
     }
 
     /* ---------------- admin only ---------------- */

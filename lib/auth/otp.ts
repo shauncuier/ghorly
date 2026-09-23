@@ -148,10 +148,22 @@ export async function verifyOtp(phone: string, code: string): Promise<VerifyOtpR
     return { ok: false, error: "কোডের মেয়াদ শেষ। নতুন কোড নিন।" };
   }
 
-  if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
+  // Claim an attempt *before* comparing, atomically. Reading `attempts` and
+  // incrementing it as two steps let parallel requests all see the same count
+  // and blow straight past the limit.
+  const claimed = await db
+    .collection(COLLECTION)
+    .findOneAndUpdate(
+      { _id: challenge._id, consumedAt: null, attempts: { $lt: OTP_MAX_ATTEMPTS } } as never,
+      { $inc: { attempts: 1 } },
+      { returnDocument: "after" },
+    );
+
+  if (!claimed) {
     await db.collection(COLLECTION).deleteOne({ _id: challenge._id } as never);
     return { ok: false, error: "অনেকবার ভুল হয়েছে। নতুন কোড নিন।" };
   }
+  const attempts = (claimed as unknown as OtpChallenge).attempts;
 
   const supplied = Buffer.from(hashCode(code, challenge.salt), "hex");
   const stored = Buffer.from(challenge.codeHash, "hex");
@@ -159,21 +171,25 @@ export async function verifyOtp(phone: string, code: string): Promise<VerifyOtpR
     supplied.length === stored.length && timingSafeEqual(supplied, stored);
 
   if (!matches) {
-    await db
-      .collection(COLLECTION)
-      .updateOne({ _id: challenge._id } as never, { $inc: { attempts: 1 } });
-    const left = OTP_MAX_ATTEMPTS - (challenge.attempts + 1);
     return {
       ok: false,
       error: "কোডটি সঠিক নয়।",
-      attemptsLeft: Math.max(0, left),
+      attemptsLeft: Math.max(0, OTP_MAX_ATTEMPTS - attempts),
     };
   }
 
-  // Single use: burn it immediately so a replayed code cannot sign in twice.
-  await db
+  // Single use: only the request that actually flips `consumedAt` signs in.
+  // Two concurrent submissions of the right code both reach this line; the
+  // filter on `consumedAt: null` lets exactly one of them win.
+  const burned = await db
     .collection(COLLECTION)
-    .updateOne({ _id: challenge._id } as never, { $set: { consumedAt: now } });
+    .updateOne(
+      { _id: challenge._id, consumedAt: null } as never,
+      { $set: { consumedAt: now } },
+    );
+  if (burned.modifiedCount !== 1) {
+    return { ok: false, error: "কোডের মেয়াদ শেষ। নতুন কোড নিন।" };
+  }
 
   return { ok: true };
 }

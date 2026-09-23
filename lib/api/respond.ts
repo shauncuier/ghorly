@@ -17,6 +17,7 @@ export type ErrorCode =
   | "forbidden"
   | "invalid"
   | "not_found"
+  | "conflict"
   | "rate_limited"
   | "unavailable"
   | "internal";
@@ -26,6 +27,7 @@ const STATUS: Record<ErrorCode, number> = {
   forbidden: 403,
   invalid: 400,
   not_found: 404,
+  conflict: 409,
   rate_limited: 429,
   unavailable: 503,
   internal: 500,

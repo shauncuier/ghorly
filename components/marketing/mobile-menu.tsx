@@ -4,12 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { Menu } from "lucide-react";
 import { Drawer, DrawerContent, DrawerTrigger } from "@/components/ui/drawer";
-import { Button } from "@/components/ui/button";
+import { HeaderAuthActions } from "@/components/marketing/header-auth";
 import { Logo } from "@/components/marketing/logo";
-import { ACTIONS, ARIA, NAV } from "@/lib/strings";
+import { ARIA, NAV } from "@/lib/strings";
 
 /**
- * The only client island in the marketing header.
+ * The marketing header's mobile drawer (a client island, like the account
+ * buttons in `header-auth.tsx`).
  *
  * Keeping the disclosure state here means the header itself — logo, desktop
  * nav, CTAs — stays server-rendered HTML, which is what keeps the landing
@@ -52,21 +53,7 @@ export function MobileMenu() {
         </nav>
 
         <div className="flex flex-col gap-2.5 border-t border-border-subtle px-5 py-5">
-          <Button asChild block>
-            <Link href="/customer/request" onClick={() => setOpen(false)}>
-              {ACTIONS.getStarted}
-            </Link>
-          </Button>
-          <Button asChild variant="secondary" block>
-            <Link href="/register/provider" onClick={() => setOpen(false)}>
-              {ACTIONS.becomeProfessional}
-            </Link>
-          </Button>
-          <Button asChild variant="ghost" block>
-            <Link href="/login" onClick={() => setOpen(false)}>
-              {ACTIONS.login}
-            </Link>
-          </Button>
+          <HeaderAuthActions layout="menu" onNavigate={() => setOpen(false)} />
         </div>
       </DrawerContent>
     </Drawer>

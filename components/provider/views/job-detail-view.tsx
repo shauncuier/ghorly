@@ -26,7 +26,7 @@ import {
   useCustomerById,
 } from "@/lib/api/queries";
 import { useMutations } from "@/lib/api/mutations";
-import { formatBdt, formatDate, formatDuration, formatPhone } from "@/lib/format";
+import { formatBdt, formatDate, formatDuration } from "@/lib/format";
 import { ACTIONS, SLOT_LABEL } from "@/lib/strings";
 import type { BookingStatus } from "@/lib/types";
 
@@ -51,8 +51,6 @@ export function ProviderJobDetailView({ bookingId }: { bookingId: string }) {
 
   const address = (addresses ?? []).find((a) => a._id === booking.addressId);
   const stageIndex = TIMELINE.findIndex((t) => t.status === booking.status);
-  // The customer's phone only becomes visible once the booking is confirmed.
-  const canSeePhone = booking.status !== "cancelled";
 
   async function run(fn: (id: string) => Promise<void>) {
     if (!booking) return;
@@ -176,17 +174,16 @@ export function ProviderJobDetailView({ bookingId }: { bookingId: string }) {
                     <span className="text-base font-semibold text-fg">
                       {customer.bnName}
                     </span>
-                    {canSeePhone && (
-                      <span className="text-sm tabular text-fg-secondary">
-                        {formatPhone(customer.phone)}
-                      </span>
-                    )}
+                    {/* No phone: the Ghorly team is the contact for both sides. */}
+                    <span className="text-sm text-fg-tertiary">
+                      প্রশ্ন থাকলে ঘরলি টিমকে জানান
+                    </span>
                   </div>
                 </div>
                 <Button asChild variant="secondary" size="sm">
                   <Link href="/provider/messages">
                     <MessageSquare aria-hidden="true" />
-                    {ACTIONS.sendMessage}
+                    ঘরলি টিমকে লিখুন
                   </Link>
                 </Button>
               </div>

@@ -19,9 +19,10 @@ import { ACTIONS } from "@/lib/strings";
 import type { Quote } from "@/lib/types";
 
 /**
- * A quote as the customer sees it — who, how much, how long, and the two
- * decisions available. Accepting cascades: sibling quotes decline, a booking
- * and a pending payment appear, and the request flips to booked.
+ * A quotation from the Ghorly team as the customer sees it: the professional
+ * the team chose (name, photo, rating — never a phone number), the price, how
+ * long it should take, and the two decisions available. Accepting books that
+ * professional; declining sends the request back to the team.
  */
 export function QuoteCard({
   quote,
@@ -65,6 +66,10 @@ export function QuoteCard({
         className,
       )}
     >
+      <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">
+        ঘরলি থেকে কোটেশন
+      </p>
+
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3.5">
           <Avatar
@@ -104,9 +109,11 @@ export function QuoteCard({
         </p>
       )}
 
-      <p className="rounded-md bg-surface-muted px-4 py-3 text-sm text-fg-secondary">
-        {quote.bnMessage}
-      </p>
+      {quote.bnMessage ? (
+        <p className="rounded-md bg-surface-muted px-4 py-3 text-sm text-fg-secondary">
+          {quote.bnMessage}
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border-subtle pt-4">
         <div className="flex flex-col gap-1">
@@ -142,7 +149,7 @@ export function QuoteCard({
           <Button asChild variant="secondary" size="sm">
             <Link href="/customer/messages">
               <MessageSquare aria-hidden="true" />
-              {ACTIONS.sendMessage}
+              ঘরলি টিমকে লিখুন
             </Link>
           </Button>
         )}

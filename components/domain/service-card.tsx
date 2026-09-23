@@ -77,7 +77,7 @@ export function ServiceChipCard({
 }) {
   return (
     <Link
-      href={href ?? `/customer/services?category=${category.slug}`}
+      href={href ?? `/customer/request?category=${category.slug}`}
       className={cn(
         "group flex items-center gap-3 rounded-lg border border-border bg-surface p-3",
         "transition-[border-color,box-shadow] duration-(--duration-fast)",

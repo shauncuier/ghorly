@@ -137,7 +137,7 @@ export function useMutations() {
       const requestId = nextId("req", counters);
       dispatch({ type: "SUBMIT_REQUEST", requestId, draft });
       toast.success("অনুরোধ পাঠানো হয়েছে", {
-        description: "উপযুক্ত পেশাদাররা শীঘ্রই কোটেশন পাঠাবেন।",
+        description: "আমাদের টিম উপযুক্ত পেশাদার খুঁজে দাম জানিয়ে কোটেশন পাঠাবে।",
       });
       return requestId;
     }, [dispatch, counters, draft]),
@@ -151,53 +151,6 @@ export function useMutations() {
       [dispatch],
     ),
 
-    /* ---------------- provider responds ---------------- */
-
-    acceptRequest: useCallback(
-      async (
-        requestId: string,
-        input: { amount: number; message: string; estimatedMinutes: number },
-      ) => {
-        await delay(LATENCY.write);
-        const quoteId = nextId("quo", counters);
-        const threadId = nextId("thr", counters);
-        const messageId = nextId("msg", counters);
-
-        dispatch({
-          type: "ACCEPT_REQUEST",
-          requestId,
-          quoteId,
-          threadId,
-          messageId,
-          ...input,
-        });
-
-        toast.success("কোটেশন পাঠানো হয়েছে", {
-          description: "গ্রাহক গ্রহণ করলে কাজটি আপনার তালিকায় যুক্ত হবে।",
-        });
-        return quoteId;
-      },
-      [dispatch, counters],
-    ),
-
-    declineRequest: useCallback(
-      async (requestId: string) => {
-        await delay(LATENCY.write);
-        dispatch({ type: "DECLINE_REQUEST", requestId });
-        toast.info("অনুরোধটি আপনার তালিকা থেকে সরানো হয়েছে");
-      },
-      [dispatch],
-    ),
-
-    withdrawQuote: useCallback(
-      async (quoteId: string) => {
-        await delay(LATENCY.write);
-        dispatch({ type: "WITHDRAW_QUOTE", quoteId });
-        toast.success("কোটেশন প্রত্যাহার করা হয়েছে");
-      },
-      [dispatch],
-    ),
-
     /* ---------------- customer decides ---------------- */
 
     acceptQuote: useCallback(
@@ -205,7 +158,14 @@ export function useMutations() {
         await delay(LATENCY.slowWrite);
         const bookingId = nextId("bkg", counters);
         const paymentId = nextId("pay", counters);
-        dispatch({ type: "ACCEPT_QUOTE", quoteId, bookingId, paymentId });
+        dispatch({
+          type: "ACCEPT_QUOTE",
+          quoteId,
+          bookingId,
+          paymentId,
+          threadId: nextId("thr", counters),
+          messageId: nextId("msg", counters),
+        });
         toast.success("কোটেশন গৃহীত হয়েছে", {
           description: "বুকিং নিশ্চিত করতে পরের ধাপে যান।",
         });
@@ -218,7 +178,9 @@ export function useMutations() {
       async (quoteId: string) => {
         await delay(LATENCY.write);
         dispatch({ type: "DECLINE_QUOTE", quoteId });
-        toast.info("কোটেশন প্রত্যাখ্যান করা হয়েছে");
+        toast.info("কোটেশন প্রত্যাখ্যান করা হয়েছে", {
+          description: "আমাদের টিম আপনার জন্য অন্য পেশাদার খুঁজবে।",
+        });
       },
       [dispatch],
     ),
@@ -361,7 +323,7 @@ export function useMutations() {
     ),
 
     updateCustomerProfile: useCallback(
-      async (patch: { bnName?: string; phone?: string; email?: string }) => {
+      async (patch: { bnName?: string; email?: string }) => {
         await delay(LATENCY.write);
         dispatch({ type: "UPDATE_CUSTOMER_PROFILE", patch });
         toast.success("প্রোফাইল হালনাগাদ হয়েছে");
@@ -435,12 +397,31 @@ export function useMutations() {
 
     /* ---------------- messaging ---------------- */
 
+    /**
+     * Sends into a support thread. Without a `threadId` it opens one: the
+     * sender's own for a customer or provider, or — for the admin — a new
+     * conversation with the party named in `to`.
+     */
     sendMessage: useCallback(
-      async (threadId: string, body: string, role: "customer" | "provider") => {
+      async (input: {
+        threadId?: string;
+        body: string;
+        role: "customer" | "provider" | "admin";
+        to?: { kind: "customer" | "provider"; id: string };
+      }) => {
         const messageId = nextId("msg", counters);
-        dispatch({ type: "SEND_MESSAGE", threadId, messageId, body, role, sentAt: currentNaiveLocal() });
+        const threadId = input.threadId ?? nextId("thr", counters);
+        dispatch({
+          type: "SEND_MESSAGE",
+          threadId,
+          messageId,
+          body: input.body,
+          role: input.role,
+          sentAt: currentNaiveLocal(),
+          ...(input.to ? { to: input.to } : {}),
+        });
         await delay(LATENCY.read);
-        return messageId;
+        return threadId;
       },
       [dispatch, counters],
     ),
@@ -453,6 +434,45 @@ export function useMutations() {
     ),
 
     /* ---------------- admin ---------------- */
+
+    /**
+     * Offers a price to the customer after the team agreed it with a
+     * provider. Any quotation still open on the request is replaced.
+     */
+    sendQuotation: useCallback(
+      async (input: {
+        requestId: string;
+        providerId: string;
+        amount: number;
+        providerPayout: number;
+        estimatedMinutes: number;
+        message: string;
+      }) => {
+        await delay(LATENCY.write);
+        const quoteId = nextId("quo", counters);
+        dispatch({
+          type: "SEND_QUOTATION",
+          ...input,
+          quoteId,
+          threadId: nextId("thr", counters),
+          messageId: nextId("msg", counters),
+        });
+        toast.success("কোটেশন পাঠানো হয়েছে", {
+          description: "গ্রাহক নিশ্চিত করলে কাজটি পেশাদারকে দেওয়া হবে।",
+        });
+        return quoteId;
+      },
+      [dispatch, counters],
+    ),
+
+    withdrawQuote: useCallback(
+      async (quoteId: string) => {
+        await delay(LATENCY.write);
+        dispatch({ type: "WITHDRAW_QUOTE", quoteId });
+        toast.success("কোটেশন প্রত্যাহার করা হয়েছে");
+      },
+      [dispatch],
+    ),
 
     approveVerification: useCallback(
       async (verificationId: string) => {

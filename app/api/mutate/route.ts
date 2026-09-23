@@ -1,6 +1,7 @@
-import { loadState, persistChanges } from "@/lib/db/repository";
+import { loadState, persistChanges, WriteConflictError } from "@/lib/db/repository";
 import { scopeStateForSession } from "@/lib/db/scope";
-import { getSession } from "@/lib/auth/session";
+import { clearSessionCookie, getSession } from "@/lib/auth/session";
+import { refreshSession } from "@/lib/auth/accounts";
 import { authorize } from "@/lib/auth/policy";
 import { ActionSchema } from "@/lib/api/validation";
 import { clientKey, rateLimit, LIMITS } from "@/lib/api/rate-limit";
@@ -37,8 +38,8 @@ export async function POST(request: Request) {
   );
   if (!limit.ok) return rateLimited(limit.retryAfterSeconds);
 
-  const session = await getSession();
-  if (!session) {
+  const cookieSession = await getSession();
+  if (!cookieSession) {
     return fail("unauthenticated", "লগ ইন করুন।");
   }
 
@@ -63,10 +64,21 @@ export async function POST(request: Request) {
     if (!fromDatabase) {
       // No database: say so rather than letting the client believe it wrote.
       return ok({
-        state: scopeStateForSession(before, session),
+        state: scopeStateForSession(before, cookieSession),
         fromDatabase: false,
         persisted: 0,
       });
+    }
+
+    // The cookie is a 7-day snapshot. Roles and suspension are re-read from
+    // the account so a suspended user or a removed admin stops being able to
+    // write on the next request, not when the cookie expires.
+    const session = await refreshSession(cookieSession);
+    if (!session) {
+      // Clear it too: otherwise the login page still sees a cookie and sends
+      // the user straight back, and they can never sign in again.
+      await clearSessionCookie();
+      return fail("unauthenticated", "লগ ইন করুন।");
     }
 
     // Authorization runs against real state, not against what the caller
@@ -85,6 +97,11 @@ export async function POST(request: Request) {
       persisted: written,
     });
   } catch (error) {
+    if (error instanceof WriteConflictError) {
+      // Someone changed the same records first. The client refreshes on any
+      // rejection, so the user sees the current state and can retry.
+      return fail("conflict", "তথ্য ইতিমধ্যে বদলে গেছে। আবার চেষ্টা করুন।");
+    }
     return internal("mutate", error);
   }
 }

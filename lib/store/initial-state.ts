@@ -120,10 +120,23 @@ export function buildInitialState(): AppState {
   };
 }
 
-/** `nextId('bkg', state)` → `'bkg-0042'`. Counter-derived, never random. */
+/**
+ * `nextId('bkg', counters)` → `'bkg-0042-k3f9q2'`.
+ *
+ * The number keeps ids readable and roughly ordered; the random suffix makes
+ * them unique. Counter-only ids collided the moment two people wrote at once —
+ * e.g. an admin's reply arriving live while the customer's browser, holding an
+ * older counter, minted the same `msg-00NN` for its own next message.
+ */
 export function nextId(prefix: string, counters: Record<string, number>): string {
   const n = (counters[prefix] ?? 0) + 1;
-  return `${prefix}-${String(n).padStart(4, "0")}`;
+  return `${prefix}-${String(n).padStart(4, "0")}-${randomSuffix()}`;
+}
+
+function randomSuffix(): string {
+  const bytes = new Uint8Array(4);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 6);
 }
 
 /**

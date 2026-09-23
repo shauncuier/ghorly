@@ -133,8 +133,8 @@ export function RequestWizard() {
         </span>
         <h1 className="text-3xl font-extrabold text-fg">অনুরোধ পাঠানো হয়েছে</h1>
         <p className="max-w-md text-base text-fg-secondary">
-          আপনার এলাকার উপযুক্ত পেশাদাররা অনুরোধটি দেখছেন। কোটেশন এলে আমরা আপনাকে
-          জানাব — সাধারণত কয়েক ঘণ্টার মধ্যেই সাড়া পাওয়া যায়।
+          আমাদের টিম আপনার কাজের জন্য উপযুক্ত পেশাদার খুঁজে দাম ঠিক করবে, তারপর কোটেশন
+          পাঠাবে — সাধারণত কয়েক ঘণ্টার মধ্যেই।
         </p>
         <div className="mt-2 flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row">
           <Button asChild size="lg">
@@ -217,7 +217,7 @@ export function RequestWizard() {
               label="বিস্তারিত বিবরণ"
               required
               error={errors.description}
-              hint="যত বিস্তারিত লিখবেন, কোটেশন তত সঠিক হবে"
+              hint="যত বিস্তারিত লিখবেন, আমাদের টিম তত সঠিক দাম জানাতে পারবে"
             >
               {(p) => (
                 <Textarea
@@ -496,7 +496,7 @@ export function RequestWizard() {
             </dl>
 
             <p className="rounded-md bg-surface-muted px-4 py-3 text-sm text-fg-secondary">
-              অনুরোধ পাঠাতে কোনো খরচ নেই। কোটেশন পছন্দ না হলে বুক করতে হবে না।
+              অনুরোধ পাঠাতে কোনো খরচ নেই। ঘরলি টিম পেশাদার ঠিক করে কোটেশন পাঠাবে — পছন্দ না হলে বুক করতে হবে না।
             </p>
           </div>
         )}

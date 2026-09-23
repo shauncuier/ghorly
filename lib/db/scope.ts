@@ -97,40 +97,32 @@ export function scopeStateForSession(full: AppState, session: Session | null): A
 
   const { customerId, providerId } = session;
 
-  const requests = Object.values(full.entities.requests).filter((r) => {
-    if (customerId && r.customerId === customerId) return true;
-    if (!providerId) return false;
-    // A provider sees open requests they could quote on, plus any they have
-    // already engaged with.
-    const provider = full.entities.providers[providerId];
-    if (!provider) return false;
-    const engaged = r.quoteIds.some(
-      (qid) => full.entities.quotes[qid]?.providerId === providerId,
-    );
-    if (engaged) return true;
-    return (
-      r.status === "open" &&
-      provider.activeCategoryIds.includes(r.categoryId) &&
-      (provider.areaId === r.areaId || provider.serviceAreaIds.includes(r.areaId))
-    );
-  });
-
-  const quotes = Object.values(full.entities.quotes).filter(
-    (q) =>
-      (customerId && q.customerId === customerId) ||
-      (providerId && q.providerId === providerId),
-  );
-
   const bookings = Object.values(full.entities.bookings).filter(
     (b) =>
       (customerId && b.customerId === customerId) ||
       (providerId && b.providerId === providerId),
   );
 
+  // Customers see their own requests. Providers see a request only once the
+  // team has assigned it to them — there is no open feed to browse, because
+  // jobs are dispatched by the admin, not picked by providers.
+  const requests = Object.values(full.entities.requests).filter(
+    (r) =>
+      (customerId && r.customerId === customerId) ||
+      bookings.some((b) => b.requestId === r._id && b.providerId === providerId),
+  );
+
+  // Quotations are between the team and the customer. A provider never sees
+  // them: the customer price and the platform's margin are not theirs to see.
+  const quotes = Object.values(full.entities.quotes).filter(
+    (q) => customerId && q.customerId === customerId,
+  );
+
+  // Each party sees only their own support thread with the team.
   const threads = Object.values(full.entities.threads).filter(
     (t) =>
-      (customerId && t.customerId === customerId) ||
-      (providerId && t.providerId === providerId),
+      (customerId && t.kind === "customer" && t.customerId === customerId) ||
+      (providerId && t.kind === "provider" && t.providerId === providerId),
   );
 
   const messages = threads.flatMap((t) => t.messageIds);
@@ -165,7 +157,6 @@ export function scopeStateForSession(full: AppState, session: Session | null): A
   if (customerId) counterpartCustomerIds.add(customerId);
   for (const r of requests) counterpartCustomerIds.add(r.customerId);
   for (const b of bookings) counterpartCustomerIds.add(b.customerId);
-  for (const t of threads) counterpartCustomerIds.add(t.customerId);
 
   return buildScope(
     full,
@@ -240,6 +231,43 @@ function buildScope(
     const allowed = pick(full.entities[name] as Record<string, unknown>, ids[name]);
     entities[name] = allowed as never;
     order[name] = orderOf(full.order[name], allowed);
+  }
+
+  // A provider is paid what the team agreed with them, and that is all they
+  // see: on their jobs `amount` becomes their payout and the platform's cut is
+  // hidden. Every provider screen and earnings figure already reads
+  // `amount - commission`, so they show the payout without changes.
+  const selfProviderId = session?.providerId;
+  if (selfProviderId && !session?.roles.includes("admin")) {
+    for (const key of ["bookings", "payments"] as const) {
+      const rows = entities[key] as Record<string, { providerId: string; customerId: string; amount: number; commission: number }>;
+      for (const [id, row] of Object.entries(rows)) {
+        if (row.providerId === selfProviderId && row.customerId !== selfCustomerId) {
+          rows[id] = { ...row, amount: row.amount - row.commission, commission: 0 };
+        }
+      }
+    }
+  }
+
+  // And a customer sees the price they pay, not how it splits — the payout
+  // and margin are agreed between the team and the professional.
+  if (selfCustomerId && !session?.roles.includes("admin")) {
+    for (const key of ["bookings", "payments"] as const) {
+      const rows = entities[key] as Record<string, { providerId: string; customerId: string; commission: number }>;
+      for (const [id, row] of Object.entries(rows)) {
+        if (row.customerId === selfCustomerId && row.providerId !== selfProviderId) {
+          rows[id] = { ...row, commission: 0 };
+        }
+      }
+    }
+    const quotes = entities.quotes as Record<string, { customerId: string; providerPayout?: number }>;
+    for (const [id, q] of Object.entries(quotes)) {
+      if (q.customerId === selfCustomerId) {
+        const { providerPayout: _hidden, ...rest } = q;
+        void _hidden;
+        quotes[id] = rest;
+      }
+    }
   }
 
   return {

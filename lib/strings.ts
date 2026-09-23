@@ -56,7 +56,8 @@ export const STATUS: {
   dispute: Record<DisputeStatus, StatusMeta>;
 } = {
   request: {
-    open: { label: "খোলা", tone: "accent" },
+    // `open` = waiting for the team to find a professional and set a price.
+    open: { label: "যাচাই চলছে", tone: "accent" },
     quoted: { label: "কোটেশন এসেছে", tone: "warning" },
     booked: { label: "বুক হয়েছে", tone: "success" },
     cancelled: { label: "বাতিল", tone: "neutral" },
@@ -142,12 +143,11 @@ export const NAV = {
 
   customer: [
     { href: "/customer", label: "ড্যাশবোর্ড", icon: "layout-dashboard" },
-    { href: "/customer/services", label: "সেবা খুঁজুন", icon: "search" },
+    { href: "/customer/request", label: "নতুন অনুরোধ", icon: "plus" },
     { href: "/customer/requests", label: "আমার অনুরোধ", icon: "file-text" },
     { href: "/customer/quotes", label: "কোটেশন", icon: "receipt-text" },
     { href: "/customer/bookings", label: "বুকিং", icon: "calendar-check" },
     { href: "/customer/messages", label: "বার্তা", icon: "message-square" },
-    { href: "/customer/favorites", label: "পছন্দের তালিকা", icon: "heart" },
     { href: "/customer/addresses", label: "ঠিকানা", icon: "map-pin" },
     { href: "/customer/payments", label: "পেমেন্ট", icon: "credit-card" },
     { href: "/customer/reviews", label: "রিভিউ", icon: "star" },
@@ -156,8 +156,6 @@ export const NAV = {
 
   provider: [
     { href: "/provider", label: "ড্যাশবোর্ড", icon: "layout-dashboard" },
-    { href: "/provider/requests", label: "নতুন অনুরোধ", icon: "inbox" },
-    { href: "/provider/quotes", label: "কোটেশন", icon: "receipt-text" },
     { href: "/provider/jobs", label: "কাজ", icon: "briefcase" },
     { href: "/provider/calendar", label: "ক্যালেন্ডার", icon: "calendar" },
     { href: "/provider/services", label: "আমার সেবা", icon: "wrench" },
@@ -176,6 +174,7 @@ export const NAV = {
     { href: "/admin/verification", label: "যাচাইকরণ", icon: "shield-check" },
     { href: "/admin/services", label: "সেবা", icon: "wrench" },
     { href: "/admin/requests", label: "অনুরোধ", icon: "file-text" },
+    { href: "/admin/messages", label: "বার্তা", icon: "message-square" },
     { href: "/admin/bookings", label: "বুকিং", icon: "calendar-check" },
     { href: "/admin/payments", label: "পেমেন্ট", icon: "credit-card" },
     { href: "/admin/reviews", label: "রিভিউ", icon: "star" },
@@ -188,7 +187,7 @@ export const NAV = {
   /** Mobile bottom bars — five items, the most-used routes only. */
   customerMobile: [
     { href: "/customer", label: "হোম", icon: "house" },
-    { href: "/customer/services", label: "সেবা", icon: "search" },
+    { href: "/customer/request", label: "অনুরোধ", icon: "plus" },
     { href: "/customer/bookings", label: "বুকিং", icon: "calendar-check" },
     { href: "/customer/messages", label: "বার্তা", icon: "message-square" },
     { href: "/customer/settings", label: "প্রোফাইল", icon: "user" },
@@ -196,8 +195,8 @@ export const NAV = {
 
   providerMobile: [
     { href: "/provider", label: "হোম", icon: "house" },
-    { href: "/provider/requests", label: "অনুরোধ", icon: "inbox" },
     { href: "/provider/jobs", label: "কাজ", icon: "briefcase" },
+    { href: "/provider/messages", label: "বার্তা", icon: "message-square" },
     { href: "/provider/earnings", label: "আয়", icon: "wallet" },
     { href: "/provider/settings", label: "প্রোফাইল", icon: "user" },
   ] satisfies NavItem[],
@@ -271,24 +270,18 @@ export const EMPTY: Record<string, EmptyCopy> = {
   bookings: {
     title: "এখনো কোনো বুকিং নেই",
     body: "আপনার বুক করা সেবাগুলো এখানে দেখা যাবে।",
-    cta: ACTIONS.findService,
-    href: "/customer/services",
+    cta: ACTIONS.requestService,
+    href: "/customer/request",
   },
   upcomingBookings: {
     title: "আসন্ন কোনো বুকিং নেই",
     body: "নতুন সেবা বুক করলে সেটি এখানে দেখা যাবে।",
-    cta: ACTIONS.findService,
-    href: "/customer/services",
+    cta: ACTIONS.requestService,
+    href: "/customer/request",
   },
   messages: {
     title: "কোনো বার্তা নেই",
-    body: "পেশাদারদের সাথে আপনার কথোপকথন এখানে দেখা যাবে।",
-  },
-  favorites: {
-    title: "পছন্দের তালিকা খালি",
-    body: "যেসব পেশাদারকে আপনি বিশ্বাস করেন, তাঁদের পরে খুঁজে পেতে সংরক্ষণ করুন।",
-    cta: ACTIONS.findProfessionals,
-    href: "/customer/services",
+    body: "গ্রাহক ও পেশাদারদের বার্তা এখানে দেখা যাবে।",
   },
   requests: {
     title: "কোনো অনুরোধ নেই",
@@ -298,7 +291,7 @@ export const EMPTY: Record<string, EmptyCopy> = {
   },
   quotes: {
     title: "এখনো কোনো কোটেশন আসেনি",
-    body: "পেশাদাররা আপনার অনুরোধে সাড়া দিলে তাঁদের কোটেশন এখানে দেখা যাবে।",
+    body: "আমাদের টিম পেশাদার ঠিক করে দাম জানালে কোটেশন এখানে দেখা যাবে।",
   },
   addresses: {
     title: "কোনো ঠিকানা যোগ করা হয়নি",
@@ -313,19 +306,9 @@ export const EMPTY: Record<string, EmptyCopy> = {
     title: "কোনো রিভিউ নেই",
     body: "সেবা সম্পন্ন হলে আপনি পেশাদারের রিভিউ দিতে পারবেন।",
   },
-  providerRequests: {
-    title: "নতুন কোনো অনুরোধ নেই",
-    body: "আপনার এলাকা ও সেবার সাথে মিলে গেলে নতুন অনুরোধ এখানে আসবে।",
-  },
-  providerQuotes: {
-    title: "কোনো কোটেশন পাঠানো হয়নি",
-    body: "অনুরোধ গ্রহণ করে কোটেশন পাঠালে সেগুলো এখানে দেখা যাবে।",
-    cta: "অনুরোধ দেখুন",
-    href: "/provider/requests",
-  },
   providerJobs: {
     title: "কোনো কাজ নেই",
-    body: "গ্রাহক আপনার কোটেশন গ্রহণ করলে কাজটি এখানে যুক্ত হবে।",
+    body: "ঘরলি টিম আপনাকে কাজ দিলে সেটি এখানে যুক্ত হবে।",
   },
   providerEarnings: {
     title: "এখনো কোনো আয় নেই",

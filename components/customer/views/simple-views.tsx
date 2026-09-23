@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   CreditCard,
-  Heart,
   MapPin,
   Plus,
   Star,
@@ -38,11 +37,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/app-shell/app-shell";
-import { ProviderCard } from "@/components/domain/provider-card";
 import { CategoryIcon } from "@/components/domain/category-icon";
 import {
   ListSkeleton,
-  ProviderGridSkeleton,
   ReviewSkeleton,
 } from "@/components/skeletons";
 import {
@@ -52,7 +49,6 @@ import {
   useCurrentCustomer,
   useCustomerPayments,
   useCustomerReviews,
-  useFavorites,
   useProviderById,
 } from "@/lib/api/queries";
 import { useMutations } from "@/lib/api/mutations";
@@ -60,38 +56,6 @@ import { formatBdt, formatDate } from "@/lib/format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { ACTIONS, EMPTY, PAYMENT_METHOD_BN, VALIDATION } from "@/lib/strings";
 import type { Payment, Review } from "@/lib/types";
-
-/* ==========================================================================
-   Favourites
-   ========================================================================== */
-
-export function FavoritesView() {
-  const { data: favorites, isLoading, error, refetch } = useFavorites();
-
-  return (
-    <>
-      <PageHeader
-        title="পছন্দের তালিকা"
-        description="যেসব পেশাদারকে আপনি সংরক্ষণ করেছেন।"
-      />
-      {error ? (
-        <ErrorState onRetry={refetch} />
-      ) : isLoading ? (
-        <ProviderGridSkeleton count={3} />
-      ) : (favorites ?? []).length === 0 ? (
-        <div className="rounded-lg border border-border bg-surface">
-          <EmptyState {...EMPTY.favorites} icon={<Heart />} />
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {(favorites ?? []).map((p) => (
-            <ProviderCard key={p._id} provider={p} />
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
 
 /* ==========================================================================
    Addresses
@@ -500,7 +464,8 @@ export function CustomerSettingsView() {
   async function save() {
     setPending(true);
     try {
-      await updateCustomerProfile(values);
+      // Phone is the login identity and is shown read-only; it is not sent.
+      await updateCustomerProfile({ bnName: values.bnName, email: values.email });
       setTouched(false);
     } finally {
       setPending(false);
@@ -529,14 +494,15 @@ export function CustomerSettingsView() {
             )}
           </Field>
 
-          <Field label="মোবাইল নম্বর" required>
+          <Field label="মোবাইল নম্বর" hint="লগ ইনের নম্বর — এখান থেকে বদলানো যায় না।">
             {(p) => (
               <Input
                 {...p}
                 type="tel"
                 inputMode="numeric"
                 value={values.phone}
-                onChange={(e) => set("phone", e.target.value)}
+                readOnly
+                aria-readonly="true"
               />
             )}
           </Field>

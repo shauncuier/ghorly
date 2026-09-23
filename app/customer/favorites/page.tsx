@@ -1,11 +1,9 @@
-import type { Metadata } from "next";
-import { FavoritesView } from "@/components/customer/views/simple-views";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "পছন্দের তালিকা",
-  robots: { index: false },
-};
-
+/**
+ * Retired: customers no longer pick providers — the Ghorly team assigns one.
+ * Kept as a redirect so old links and bookmarks still land somewhere useful.
+ */
 export default function Page() {
-  return <FavoritesView />;
+  redirect("/customer/request");
 }

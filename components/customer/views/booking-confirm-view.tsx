@@ -67,7 +67,7 @@ export function BookingConfirmView({ bookingId }: { bookingId: string }) {
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold text-fg md:text-3xl">বুকিং নিশ্চিত করুন</h1>
         <p className="text-base text-fg-secondary">
-          সব ঠিক থাকলে নিশ্চিত করুন — পেশাদারকে জানিয়ে দেওয়া হবে।
+          সব ঠিক থাকলে নিশ্চিত করুন — ঘরলি টিম পেশাদারকে জানিয়ে দেবে।
         </p>
       </div>
 
@@ -171,19 +171,8 @@ export function BookingConfirmView({ bookingId }: { bookingId: string }) {
         <Separator />
 
         <dl className="flex flex-col gap-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-sm text-fg-secondary">সেবার দাম</dt>
-            <dd className="text-sm font-medium tabular text-fg">
-              {formatBdt(booking.amount - booking.commission)}
-            </dd>
-          </div>
-          <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-sm text-fg-secondary">প্ল্যাটফর্ম ফি</dt>
-            <dd className="text-sm font-medium tabular text-fg">
-              {formatBdt(booking.commission)}
-            </dd>
-          </div>
-          <Separator />
+          {/* One price: what the team quoted. How it splits between the professional
+              and the platform is between the team and the professional. */}
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-base font-semibold text-fg">সর্বমোট</dt>
             <dd className="text-2xl font-extrabold tabular text-fg">

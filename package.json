@@ -13,7 +13,8 @@
     "db:verify": "tsx --env-file-if-exists=.env.local scripts/db-verify.ts",
     "db:inspect": "tsx --env-file-if-exists=.env.local scripts/db-inspect.ts",
     "db:fallback": "tsx --env-file-if-exists=.env.local scripts/db-fallback-test.ts",
-    "sms:check": "tsx --env-file-if-exists=.env.local scripts/sms-test.ts"
+    "sms:check": "tsx --env-file-if-exists=.env.local scripts/sms-test.ts",
+    "admin:grant": "tsx --env-file-if-exists=.env.local scripts/grant-admin.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

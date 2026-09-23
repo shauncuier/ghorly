@@ -7,6 +7,8 @@ import { buildInitialState } from "@/lib/store/initial-state";
 // clock here is safe — and required, or a record a real person creates is
 // stamped with the seed's frozen date.
 import { currentDate, currentNaiveLocal } from "@/lib/data/clock";
+import { supportThreadFor, threadParty, type SupportKind } from "@/lib/store/support";
+import type { Message } from "@/lib/types";
 
 const COMMISSION_RATE = 0.12;
 
@@ -75,14 +77,93 @@ function bumpCounter(state: AppState, prefix: string): AppState {
   };
 }
 
+/**
+ * Posts one message into a party's support thread, opening the thread with
+ * `threadId` if they don't have one yet. Every conversation in the product is
+ * between the Ghorly team and one customer or one provider.
+ */
+function postToSupport(
+  state: AppState,
+  opts: {
+    kind: SupportKind;
+    partyId: string;
+    threadId: string;
+    messageId: string;
+    senderRole: Message["senderRole"];
+    senderId: string;
+    body: string;
+    at: string;
+    requestId?: string | null;
+    bookingId?: string | null;
+  },
+): AppState {
+  const existing = supportThreadFor(state.entities, opts.kind, opts.partyId);
+  const threadId = existing?._id ?? opts.threadId;
+
+  let next = addEntity(
+    state,
+    "messages",
+    {
+      _id: opts.messageId,
+      threadId,
+      senderRole: opts.senderRole,
+      senderId: opts.senderId,
+      bnBody: opts.body,
+      sentAt: opts.at,
+      // The sender has obviously read their own message.
+      isRead: opts.senderRole !== "system",
+      createdAt: opts.at,
+      updatedAt: opts.at,
+    },
+    false,
+  );
+
+  if (existing) {
+    next = patchEntity(next, "threads", existing._id, {
+      lastMessageAt: opts.at,
+      // Never list a message twice, whatever order events arrive in.
+      messageIds: existing.messageIds.includes(opts.messageId)
+        ? existing.messageIds
+        : [...existing.messageIds, opts.messageId],
+      requestId: opts.requestId ?? existing.requestId,
+      bookingId: opts.bookingId ?? existing.bookingId,
+    });
+  } else {
+    next = addEntity(next, "threads", {
+      _id: threadId,
+      kind: opts.kind,
+      customerId: opts.kind === "customer" ? opts.partyId : null,
+      providerId: opts.kind === "provider" ? opts.partyId : null,
+      bookingId: opts.bookingId ?? null,
+      requestId: opts.requestId ?? null,
+      bnSubject: "ঘরলি সাপোর্ট",
+      lastMessageAt: opts.at,
+      messageIds: [opts.messageId],
+      createdAt: opts.at,
+      updatedAt: opts.at,
+    });
+    next = bumpCounter(next, "thr");
+  }
+
+  return bumpCounter(next, "msg");
+}
+
+/** Puts a request back in the admin queue once no quotation on it is live. */
+function reopenIfNoLiveQuote(state: AppState, requestId: string): AppState {
+  const request = state.entities.requests[requestId];
+  if (!request || request.status !== "quoted") return state;
+  const live = request.quoteIds.some((id) => state.entities.quotes[id]?.status === "sent");
+  return live ? state : patchEntity(state, "requests", requestId, { status: "open" });
+}
+
 /* =========================================================================
    The reducer.
 
    Cross-entity cascades are the whole point — they are what makes a button
-   feel like it did something real rather than flipping one flag. Accepting a
-   request has to create a quote, attach it to the request, open a message
-   thread and seed a system message, so that the request genuinely leaves one
-   list and appears in another.
+   feel like it did something real rather than flipping one flag. Sending a
+   quotation has to create the quote, retire the previous one, move the
+   request out of the admin queue and tell the customer in their support
+   thread, so the request genuinely leaves one list and appears in another.
    ========================================================================= */
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -178,103 +259,62 @@ export function reducer(state: AppState, action: Action): AppState {
     case "CANCEL_REQUEST":
       return patchEntity(state, "requests", action.requestId, { status: "cancelled" });
 
-    /* ---------------- provider responds ---------------- */
+    /* ---------------- admin quotes ---------------- */
 
-    case "ACCEPT_REQUEST": {
+    case "SEND_QUOTATION": {
       const request = state.entities.requests[action.requestId];
       if (!request) return state;
-      const providerId = state.session.providerId;
+      const now = currentNaiveLocal();
 
-      // 1. the quote
-      let next = addEntity(state, "quotes", {
+      // One live quotation per request: a new offer replaces the old one.
+      let next = state;
+      for (const id of request.quoteIds) {
+        if (next.entities.quotes[id]?.status === "sent") {
+          next = patchEntity(next, "quotes", id, { status: "withdrawn" });
+        }
+      }
+
+      next = addEntity(next, "quotes", {
         _id: action.quoteId,
-        requestId: action.requestId,
-        providerId,
+        requestId: request._id,
+        providerId: action.providerId,
         customerId: request.customerId,
         amount: action.amount,
+        providerPayout: action.providerPayout,
         bnMessage: action.message,
         estimatedMinutes: action.estimatedMinutes,
         status: "sent",
         validUntil: request.preferredDate,
-        createdAt: currentNaiveLocal(),
-        updatedAt: currentNaiveLocal(),
+        createdAt: now,
+        updatedAt: now,
       });
 
-      // 2. attach it to the request and move the request out of "open"
-      next = patchEntity(next, "requests", action.requestId, {
+      next = patchEntity(next, "requests", request._id, {
         status: "quoted",
         quoteIds: [...request.quoteIds, action.quoteId],
       });
 
-      // 3. open a conversation if the pair don't already have one
-      const existing = Object.values(next.entities.threads).find(
-        (t) => t.customerId === request.customerId && t.providerId === providerId,
-      );
+      next = postToSupport(next, {
+        kind: "customer",
+        partyId: request.customerId,
+        threadId: action.threadId,
+        messageId: action.messageId,
+        senderRole: "system",
+        senderId: "system",
+        body: `“${request.bnTitle}” — এর জন্য কোটেশন পাঠানো হয়েছে। অনুরোধের পাতায় দেখে নিশ্চিত করুন।`,
+        at: now,
+        requestId: request._id,
+      });
 
-      if (existing) {
-        next = addEntity(
-          next,
-          "messages",
-          {
-            _id: action.messageId,
-            threadId: existing._id,
-            senderRole: "system",
-            senderId: "system",
-            bnBody: "নতুন কোটেশন পাঠানো হয়েছে।",
-            sentAt: currentNaiveLocal(),
-            isRead: false,
-            createdAt: currentNaiveLocal(),
-            updatedAt: currentNaiveLocal(),
-          },
-          false,
-        );
-        next = patchEntity(next, "threads", existing._id, {
-          lastMessageAt: currentNaiveLocal(),
-          messageIds: [...existing.messageIds, action.messageId],
-        });
-      } else {
-        next = addEntity(
-          next,
-          "messages",
-          {
-            _id: action.messageId,
-            threadId: action.threadId,
-            senderRole: "system",
-            senderId: "system",
-            bnBody: "কোটেশন পাঠানো হয়েছে।",
-            sentAt: currentNaiveLocal(),
-            isRead: false,
-            createdAt: currentNaiveLocal(),
-            updatedAt: currentNaiveLocal(),
-          },
-          false,
-        );
-        next = addEntity(next, "threads", {
-          _id: action.threadId,
-          customerId: request.customerId,
-          providerId,
-          bookingId: null,
-          requestId: action.requestId,
-          bnSubject: request.bnTitle,
-          lastMessageAt: currentNaiveLocal(),
-          messageIds: [action.messageId],
-          createdAt: currentNaiveLocal(),
-          updatedAt: currentNaiveLocal(),
-        });
-      }
-
-      next = bumpCounter(next, "quo");
-      next = bumpCounter(next, "msg");
-      return next;
+      return bumpCounter(next, "quo");
     }
 
-    case "DECLINE_REQUEST":
-      // Declining is per-provider in a real system; in the prototype the
-      // request simply leaves this provider's queue.
-      return patchEntity(state, "requests", action.requestId, { status: "expired" });
-
-    case "WITHDRAW_QUOTE":
-      return patchEntity(state, "quotes", action.quoteId, { status: "withdrawn" });
+    case "WITHDRAW_QUOTE": {
+      const quote = state.entities.quotes[action.quoteId];
+      if (!quote) return state;
+      const next = patchEntity(state, "quotes", action.quoteId, { status: "withdrawn" });
+      return reopenIfNoLiveQuote(next, quote.requestId);
+    }
 
     /* ---------------- customer decides ---------------- */
 
@@ -293,7 +333,12 @@ export function reducer(state: AppState, action: Action): AppState {
         }
       }
 
-      const commission = Math.round(quote.amount * COMMISSION_RATE);
+      // The admin agreed the provider's payout; the platform keeps the rest.
+      // Older quotes without a payout fall back to the standard rate.
+      const commission =
+        typeof quote.providerPayout === "number"
+          ? quote.amount - quote.providerPayout
+          : Math.round(quote.amount * COMMISSION_RATE);
 
       next = addEntity(next, "bookings", {
         _id: action.bookingId,
@@ -338,13 +383,31 @@ export function reducer(state: AppState, action: Action): AppState {
         bookingId: action.bookingId,
       });
 
+      // Assignment is final: the provider hears about the job from the team.
+      next = postToSupport(next, {
+        kind: "provider",
+        partyId: quote.providerId,
+        threadId: action.threadId,
+        messageId: action.messageId,
+        senderRole: "system",
+        senderId: "system",
+        body: `নতুন কাজ দেওয়া হয়েছে: “${request.bnTitle}”। কাজের তালিকায় বিস্তারিত দেখুন।`,
+        at: currentNaiveLocal(),
+        bookingId: action.bookingId,
+      });
+
       next = bumpCounter(next, "bkg");
       next = bumpCounter(next, "pay");
       return next;
     }
 
-    case "DECLINE_QUOTE":
-      return patchEntity(state, "quotes", action.quoteId, { status: "declined" });
+    case "DECLINE_QUOTE": {
+      const quote = state.entities.quotes[action.quoteId];
+      if (!quote) return state;
+      const next = patchEntity(state, "quotes", action.quoteId, { status: "declined" });
+      // Back to the admin's queue so the team can find another professional.
+      return reopenIfNoLiveQuote(next, quote.requestId);
+    }
 
     case "CONFIRM_BOOKING": {
       const booking = state.entities.bookings[action.bookingId];
@@ -482,7 +545,13 @@ export function reducer(state: AppState, action: Action): AppState {
         "payoutMethods",
         {
           _id: action.id,
-          ownerId: state.session.customerId,
+          // A provider's payout account belongs to the provider record; using
+          // `customerId` left it owned by "" for provider-only accounts, where
+          // nobody could ever delete it.
+          ownerId:
+            state.session.role === "provider"
+              ? state.session.providerId
+              : state.session.customerId,
           kind: action.kind,
           bnLabel: action.label,
           reference: action.reference,
@@ -573,32 +642,63 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "SEND_MESSAGE": {
       const thread = state.entities.threads[action.threadId];
-      if (!thread) return state;
 
-      let next = addEntity(
-        state,
-        "messages",
-        {
-          _id: action.messageId,
-          threadId: action.threadId,
-          senderRole: action.role,
-          senderId:
-            action.role === "customer" ? thread.customerId : thread.providerId,
-          bnBody: action.body,
-          sentAt: action.sentAt,
-          isRead: true,
-          createdAt: action.sentAt,
-          updatedAt: action.sentAt,
-        },
-        false,
-      );
+      // Whose thread this is: an existing one names its party; a new one is
+      // the sender's own, or — for the admin — whoever it is addressed `to`.
+      const kind: SupportKind | undefined =
+        thread?.kind ?? (action.role === "admin" ? action.to?.kind : action.role);
+      const partyId =
+        (thread && threadParty(thread)) ??
+        (action.role === "admin"
+          ? action.to?.id
+          : action.role === "customer"
+            ? state.session.customerId
+            : state.session.providerId);
+      if (!kind || !partyId) return state;
 
-      next = patchEntity(next, "threads", action.threadId, {
-        lastMessageAt: action.sentAt,
-        messageIds: [...thread.messageIds, action.messageId],
+      return postToSupport(state, {
+        kind,
+        partyId,
+        threadId: action.threadId,
+        messageId: action.messageId,
+        senderRole: action.role,
+        senderId: action.role === "admin" ? "admin" : partyId,
+        body: action.body,
+        at: action.sentAt,
       });
+    }
 
-      return bumpCounter(next, "msg");
+    case "RECEIVE_MESSAGE": {
+      const { message } = action;
+      // Our own send already put it here (optimistically or via the server's
+      // reply); the stream just echoes it back.
+      if (state.entities.messages[message._id]) return state;
+
+      let next = addEntity(state, "messages", message, false);
+      const known = next.entities.threads[action.thread._id];
+      const base = known ?? action.thread;
+      const thread = {
+        ...base,
+        lastMessageAt: message.sentAt > base.lastMessageAt ? message.sentAt : base.lastMessageAt,
+        messageIds: base.messageIds.includes(message._id)
+          ? base.messageIds
+          : [...base.messageIds, message._id],
+      };
+      next = known
+        ? { ...next, entities: { ...next.entities, threads: { ...next.entities.threads, [thread._id]: thread } } }
+        : addEntity(next, "threads", thread);
+
+      if (!action.unread) return next;
+      return {
+        ...next,
+        ui: {
+          ...next.ui,
+          unreadByThread: {
+            ...next.ui.unreadByThread,
+            [thread._id]: (next.ui.unreadByThread[thread._id] ?? 0) + 1,
+          },
+        },
+      };
     }
 
     case "MARK_THREAD_READ": {

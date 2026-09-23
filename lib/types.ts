@@ -184,7 +184,14 @@ export interface Quote extends Doc {
   requestId: string;
   providerId: string;
   customerId: string;
+  /** What the customer pays. */
   amount: number;
+  /**
+   * What the provider receives. Agreed between admin and provider before the
+   * quotation goes out; `amount - providerPayout` is the platform's commission.
+   */
+  providerPayout: number;
+  /** The admin's note to the customer. */
   bnMessage: string;
   estimatedMinutes: number;
   status: QuoteStatus;
@@ -255,9 +262,17 @@ export interface PayoutMethod extends Doc {
    Messaging
    ========================================================================== */
 
+/**
+ * A support conversation between the Ghorly team and exactly one party.
+ *
+ * Customers and providers never talk to each other — the admin is in the
+ * middle of every job — so a thread belongs to one customer (`kind:
+ * "customer"`) or one provider (`kind: "provider"`), never both.
+ */
 export interface MessageThread extends Doc {
-  customerId: string;
-  providerId: string;
+  kind: "customer" | "provider";
+  customerId: string | null;
+  providerId: string | null;
   bookingId: string | null;
   requestId: string | null;
   bnSubject: string;
@@ -268,7 +283,7 @@ export interface MessageThread extends Doc {
 export interface Message extends Doc {
   threadId: string;
   /** `system` messages narrate state changes: "কোটেশন পাঠানো হয়েছে". */
-  senderRole: "customer" | "provider" | "system";
+  senderRole: "customer" | "provider" | "admin" | "system";
   senderId: string;
   bnBody: string;
   sentAt: string;

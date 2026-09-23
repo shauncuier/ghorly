@@ -86,8 +86,8 @@ export default function ServicesPage() {
             description="রেটিং ও রিভিউয়ের সংখ্যা — দুটোই বিবেচনা করে বাছাই করা।"
             action={
               <Button asChild variant="secondary">
-                <Link href="/customer/services">
-                  {ACTIONS.viewAll}
+                <Link href="/customer/request">
+                  {ACTIONS.requestService}
                   <ArrowLeft aria-hidden="true" className="rotate-180" />
                 </Link>
               </Button>

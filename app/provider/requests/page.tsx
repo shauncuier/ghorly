@@ -1,11 +1,9 @@
-import type { Metadata } from "next";
-import { ProviderRequestsView } from "@/components/provider/views/work-views";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "নতুন অনুরোধ",
-  robots: { index: false },
-};
-
+/**
+ * Retired: providers no longer browse an open request feed — the team assigns jobs.
+ * Kept as a redirect so old links and bookmarks still land somewhere useful.
+ */
 export default function Page() {
-  return <ProviderRequestsView />;
+  redirect("/provider/jobs");
 }

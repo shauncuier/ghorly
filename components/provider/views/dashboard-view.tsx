@@ -1,66 +1,38 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft,
   BriefcaseBusiness,
   CircleCheck,
-  Inbox,
   Star,
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Rating } from "@/components/ui/rating";
 import { StatCard } from "@/components/app-shell/stat-card";
 import { BookingCard } from "@/components/domain/booking-card";
-import { RequestCard } from "@/components/domain/request-card";
-import { QuoteComposer } from "@/components/provider/quote-composer";
-import { ListSkeleton, StatCardSkeleton } from "@/components/skeletons";
+import { StatCardSkeleton } from "@/components/skeletons";
 import {
   useCurrentProvider,
-  useOpenRequestsForProvider,
   useProviderBookings,
   useProviderEarnings,
-  useProviderQuotes,
 } from "@/lib/api/queries";
-import { useMutations } from "@/lib/api/mutations";
 import { formatBdt, formatCount, formatRating } from "@/lib/format";
 import { ACTIONS, EMPTY } from "@/lib/strings";
-import type { ServiceRequest } from "@/lib/types";
 
 /**
- * The provider's home — a deliberately different shape from the customer's.
+ * The provider's home.
  *
- * A provider's first question is "what work is waiting for me", so the new
- * requests sit at the top and are actionable in place: accept opens the quote
- * composer, decline removes the row. No navigation needed to do the job.
+ * Providers don't hunt for work — the Ghorly team assigns jobs to them — so
+ * the first question is "what am I doing next", and upcoming jobs lead.
  */
 export function ProviderDashboardView() {
   const { data: provider, isLoading: loadingProvider } = useCurrentProvider();
-  const { data: requests, isLoading: loadingRequests } = useOpenRequestsForProvider();
-  const { data: quotes } = useProviderQuotes();
   const { data: upcoming } = useProviderBookings(["upcoming", "active"]);
   const { data: completed } = useProviderBookings(["completed"]);
   const { data: earnings } = useProviderEarnings();
-  const { declineRequest } = useMutations();
-
-  const [composing, setComposing] = useState<ServiceRequest | null>(null);
-  const [decliningId, setDecliningId] = useState<string | null>(null);
-
-  const openRequests = requests ?? [];
-  const sentQuotes = (quotes ?? []).filter((q) => q.status === "sent");
-
-  async function decline(id: string) {
-    setDecliningId(id);
-    try {
-      await declineRequest(id);
-    } finally {
-      setDecliningId(null);
-    }
-  }
+  const nextJobs = upcoming ?? [];
 
   return (
     <div className="flex flex-col gap-8">
@@ -70,39 +42,26 @@ export function ProviderDashboardView() {
           শুভ সকাল, {provider?.bnName?.split(" ")[0] ?? ""}
         </h1>
         <p className="text-base text-fg-secondary">
-          {openRequests.length > 0 ? (
+          {nextJobs.length > 0 ? (
             <>
-              আপনার জন্য{" "}
+              আপনার{" "}
               <span className="font-semibold tabular text-fg">
-                {formatCount(openRequests.length, "নতুন অনুরোধ")}
+                {formatCount(nextJobs.length, "টি কাজ")}
               </span>{" "}
-              অপেক্ষা করছে।
+              সামনে আছে।
             </>
           ) : (
-            "এই মুহূর্তে নতুন কোনো অনুরোধ নেই।"
+            "এই মুহূর্তে কোনো কাজ নেই। নতুন কাজ দিলে ঘরলি টিম আপনাকে জানাবে।"
           )}
         </p>
       </section>
 
       {/* ---------- metrics ---------- */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 sm:grid-cols-3">
         {loadingProvider ? (
-          Array.from({ length: 5 }).map((_, i) => <StatCardSkeleton key={i} />)
+          Array.from({ length: 3 }).map((_, i) => <StatCardSkeleton key={i} />)
         ) : (
           <>
-            <StatCard
-              label="নতুন অনুরোধ"
-              value={formatCount(openRequests.length)}
-              icon={<Inbox />}
-              href="/provider/requests"
-              tone="accent"
-            />
-            <StatCard
-              label="পাঠানো কোটেশন"
-              value={formatCount(sentQuotes.length)}
-              icon={<BriefcaseBusiness />}
-              href="/provider/quotes"
-            />
             <StatCard
               label="আসন্ন কাজ"
               value={formatCount((upcoming ?? []).length)}
@@ -124,59 +83,6 @@ export function ProviderDashboardView() {
               href="/provider/reviews"
             />
           </>
-        )}
-      </section>
-
-      {/* ---------- new requests ---------- */}
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="flex items-center gap-2.5 text-lg font-semibold text-fg">
-            নতুন অনুরোধ
-            {openRequests.length > 0 && (
-              <Badge tone="accent" size="sm" className="tabular">
-                {formatCount(openRequests.length)}
-              </Badge>
-            )}
-          </h2>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/provider/requests">
-              {ACTIONS.viewAll}
-              <ArrowLeft aria-hidden="true" className="rotate-180" />
-            </Link>
-          </Button>
-        </div>
-
-        {loadingRequests ? (
-          <ListSkeleton count={3} />
-        ) : openRequests.length === 0 ? (
-          <div className="rounded-lg border border-border bg-surface">
-            <EmptyState {...EMPTY.providerRequests} icon={<Inbox />} />
-          </div>
-        ) : (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {openRequests.slice(0, 4).map((request) => (
-              <RequestCard
-                key={request._id}
-                request={request}
-                perspective="provider"
-                actions={
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      loading={decliningId === request._id}
-                      onClick={() => void decline(request._id)}
-                    >
-                      {ACTIONS.decline}
-                    </Button>
-                    <Button size="sm" onClick={() => setComposing(request)}>
-                      {ACTIONS.accept}
-                    </Button>
-                  </div>
-                }
-              />
-            ))}
-          </div>
         )}
       </section>
 
@@ -230,13 +136,6 @@ export function ProviderDashboardView() {
         </section>
       )}
 
-      {composing && (
-        <QuoteComposer
-          request={composing}
-          open={composing !== null}
-          onOpenChange={(open) => !open && setComposing(null)}
-        />
-      )}
     </div>
   );
 }

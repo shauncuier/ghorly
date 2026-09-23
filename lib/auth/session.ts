@@ -1,6 +1,7 @@
 import "server-only";
 
 import { SignJWT, jwtVerify } from "jose";
+import { z } from "zod";
 import { cookies } from "next/headers";
 import {
   SESSION_COOKIE,
@@ -38,13 +39,36 @@ const key = new TextEncoder().encode(
 
 const ALG = "HS256";
 
-export async function createSessionToken(claims: SessionClaims): Promise<string> {
+/**
+ * The claims are checked, not cast. A valid signature proves who issued the
+ * token, not that its contents have the shape the rest of the app assumes.
+ */
+const ClaimsSchema = z.object({
+  sub: z.string().min(1),
+  phone: z.string().min(1),
+  roles: z.array(z.enum(["customer", "provider", "admin"])),
+  customerId: z.string().nullable(),
+  providerId: z.string().nullable(),
+  activeRole: z.enum(["customer", "provider", "admin"]),
+  exp: z.number(),
+});
+
+/**
+ * `expiresAt` (ms) pins the expiry of a re-signed token, e.g. on a role switch,
+ * so switching roles cannot extend a session indefinitely.
+ */
+export async function createSessionToken(
+  claims: SessionClaims,
+  expiresAt?: number,
+): Promise<string> {
   return new SignJWT({ ...claims })
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()
     .setIssuer("ghorly")
     .setAudience("ghorly-app")
-    .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
+    .setExpirationTime(
+      expiresAt ? Math.floor(expiresAt / 1000) : `${SESSION_TTL_SECONDS}s`,
+    )
     .sign(key);
 }
 
@@ -56,17 +80,11 @@ export async function verifySessionToken(token: string): Promise<Session | null>
       audience: "ghorly-app",
     });
 
-    if (!payload.sub || typeof payload.phone !== "string") return null;
+    const parsed = ClaimsSchema.safeParse(payload);
+    if (!parsed.success) return null;
+    const { exp, ...claims } = parsed.data;
 
-    return {
-      sub: payload.sub,
-      phone: payload.phone,
-      roles: (payload.roles as Session["roles"]) ?? [],
-      customerId: (payload.customerId as string | null) ?? null,
-      providerId: (payload.providerId as string | null) ?? null,
-      activeRole: (payload.activeRole as Session["activeRole"]) ?? "customer",
-      expiresAt: (payload.exp ?? 0) * 1000,
-    };
+    return { ...claims, expiresAt: exp * 1000 };
   } catch {
     // Expired, tampered, or signed with a different key — all mean "no session".
     return null;
@@ -81,8 +99,11 @@ export async function getSession(): Promise<Session | null> {
   return verifySessionToken(token);
 }
 
-export async function setSessionCookie(claims: SessionClaims): Promise<void> {
-  const token = await createSessionToken(claims);
+export async function setSessionCookie(
+  claims: SessionClaims,
+  expiresAt?: number,
+): Promise<void> {
+  const token = await createSessionToken(claims, expiresAt);
   const store = await cookies();
 
   store.set(SESSION_COOKIE, token, {
@@ -90,7 +111,9 @@ export async function setSessionCookie(claims: SessionClaims): Promise<void> {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: SESSION_TTL_SECONDS,
+    maxAge: expiresAt
+      ? Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))
+      : SESSION_TTL_SECONDS,
   });
 }
 

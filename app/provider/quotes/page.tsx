@@ -1,11 +1,9 @@
-import type { Metadata } from "next";
-import { ProviderQuotesView } from "@/components/provider/views/work-views";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "কোটেশন",
-  robots: { index: false },
-};
-
+/**
+ * Retired: providers no longer send quotes — the team agrees the price with them.
+ * Kept as a redirect so old links and bookmarks still land somewhere useful.
+ */
 export default function Page() {
-  return <ProviderQuotesView />;
+  redirect("/provider/jobs");
 }

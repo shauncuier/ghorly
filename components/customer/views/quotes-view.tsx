@@ -26,7 +26,7 @@ export function QuotesView() {
     <>
       <PageHeader
         title="কোটেশন"
-        description="পেশাদাররা আপনার অনুরোধে যে দাম ও সময় জানিয়েছেন।"
+        description="আপনার অনুরোধের জন্য ঘরলি টিম যে পেশাদার ও দাম ঠিক করেছে।"
       />
 
       {error ? (

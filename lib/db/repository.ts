@@ -1,7 +1,7 @@
 import "server-only";
 
-import type { AnyBulkWriteOperation, Document } from "mongodb";
-import { getDb } from "@/lib/db/client";
+import type { AnyBulkWriteOperation, ClientSession, Document } from "mongodb";
+import { DB_NAME, getDb, getMongoClient } from "@/lib/db/client";
 import { COLLECTIONS } from "@/lib/db/collections";
 import { buildInitialState } from "@/lib/store/initial-state";
 import type { AppState, Entities, EntityKey } from "@/lib/store/types";
@@ -54,23 +54,28 @@ export async function loadState(): Promise<LoadResult> {
           .find({})
           .toArray()) as unknown as { _id: string }[];
 
-        // An empty collection means the database exists but has not been
-        // seeded; fall back to the seed for that bucket rather than showing a
-        // half-empty product.
-        if (rows.length === 0) {
-          entities[name] = seed.entities[name] as never;
-          order[name] = seed.order[name];
-          return;
-        }
-
         const { byId, order: ids } = indexDocs(rows);
         entities[name] = byId as never;
         order[name] = ids;
       }),
     );
 
-    // `session` and `ui` are per-browser concerns, not persisted rows.
-    const meta = await db.collection("_appMeta").findOne({ _id: "ui" as never });
+    // A database with nothing in it has not been seeded: show the seed, and
+    // say it isn't the database. This is decided for the whole database, not
+    // per collection — an empty collection in a seeded database is real data
+    // (e.g. a customer deleted their last address), and filling it from the
+    // seed brought deleted records back and fed writes documents that were
+    // never in Mongo.
+    if (COLLECTIONS.every((name) => order[name].length === 0)) {
+      return { state: seed, fromDatabase: false };
+    }
+
+    // `session` and `ui` are per-browser concerns, not persisted rows — except
+    // the id counters, which must be shared so two browsers don't mint the
+    // same id.
+    const meta = (await db.collection("_appMeta").findOne({ _id: "ui" as never })) as
+      | { ui?: Partial<AppState["ui"]> }
+      | null;
 
     return {
       state: {
@@ -80,7 +85,7 @@ export async function loadState(): Promise<LoadResult> {
         order,
         ui: {
           ...seed.ui,
-          ...((meta as { ui?: AppState["ui"] } | null)?.ui ?? {}),
+          counters: { ...seed.ui.counters, ...(meta?.ui?.counters ?? {}) },
         },
       },
       fromDatabase: true,
@@ -90,6 +95,33 @@ export async function loadState(): Promise<LoadResult> {
   }
 }
 
+/** A write lost a race: a record changed (or its id was taken) since it was read. */
+export class WriteConflictError extends Error {
+  constructor(collection: string) {
+    super(`write conflict in ${collection}`);
+    this.name = "WriteConflictError";
+  }
+}
+
+/** `_v` is absent on documents written before versioning existed. */
+type VersionedDoc = { _id: string; _v?: number };
+
+function versionFilter(id: string, prev: VersionedDoc): Document {
+  return (
+    prev._v === undefined
+      ? { _id: id, _v: { $exists: false } }
+      : { _id: id, _v: prev._v }
+  ) as unknown as Document;
+}
+
+interface CollectionPlan {
+  name: EntityKey;
+  ops: AnyBulkWriteOperation<Document>[];
+  inserts: number;
+  replaces: number;
+  deletes: number;
+}
+
 /**
  * Persists the entities that actually changed.
  *
@@ -97,63 +129,134 @@ export async function loadState(): Promise<LoadResult> {
  * diffing field by field we compare document identity — the reducer returns
  * new objects only for what it touched, so a `!==` check is both correct and
  * cheap.
+ *
+ * Every mutation is read-modify-write over a snapshot, so each write is
+ * conditional on the document still being the version that was read (`_v`, a
+ * per-document counter — `updatedAt` is only minute-precise, so two edits in
+ * the same minute would look identical), and a
+ * new document is an insert that fails if the id exists. Two requests racing
+ * on the same records — say, accepting two sibling quotes — cannot both win:
+ * the loser gets a `WriteConflictError`. Where the server supports it (replica
+ * set / Atlas) the whole mutation is one transaction, so the loser leaves no
+ * partial writes behind either.
+ *
+ * Throws on failure. Reporting `written: 0` instead let the API answer 200
+ * for a write that never happened.
  */
 export async function persistChanges(
   before: AppState,
   after: AppState,
 ): Promise<{ written: number; fromDatabase: boolean }> {
-  const db = await getDb();
-  if (!db) return { written: 0, fromDatabase: false };
+  const client = await getMongoClient();
+  if (!client) return { written: 0, fromDatabase: false };
+  const db = client.db(DB_NAME);
 
-  try {
-    let written = 0;
+  const plans: CollectionPlan[] = [];
 
-    for (const name of COLLECTIONS) {
-      const prevDocs = before.entities[name] as Record<string, { _id: string }>;
-      const nextDocs = after.entities[name] as Record<string, { _id: string }>;
+  for (const name of COLLECTIONS) {
+    const prevDocs = before.entities[name] as Record<string, VersionedDoc>;
+    const nextDocs = after.entities[name] as Record<string, VersionedDoc>;
+    const plan: CollectionPlan = { name, ops: [], inserts: 0, replaces: 0, deletes: 0 };
 
-      const ops: AnyBulkWriteOperation<Document>[] = [];
-
-      for (const [id, doc] of Object.entries(nextDocs)) {
-        if (prevDocs[id] !== doc) {
-          ops.push({
-            replaceOne: {
-              filter: { _id: id } as unknown as Document,
-              replacement: doc as unknown as Document,
-              upsert: true,
-            },
-          });
-        }
-      }
-
-      // Anything removed from the store is removed from the collection too.
-      for (const id of Object.keys(prevDocs)) {
-        if (!nextDocs[id]) {
-          ops.push({ deleteOne: { filter: { _id: id } as unknown as Document } });
-        }
-      }
-
-      if (ops.length > 0) {
-        await db.collection(name).bulkWrite(ops, { ordered: false });
-        written += ops.length;
+    for (const [id, doc] of Object.entries(nextDocs)) {
+      const prev = prevDocs[id];
+      if (prev === doc) continue;
+      if (!prev) {
+        plan.ops.push({ insertOne: { document: { ...doc, _v: 1 } as unknown as Document } });
+        plan.inserts += 1;
+      } else {
+        plan.ops.push({
+          replaceOne: {
+            filter: versionFilter(id, prev),
+            replacement: { ...doc, _v: (prev._v ?? 0) + 1 } as unknown as Document,
+          },
+        });
+        plan.replaces += 1;
       }
     }
 
-    // Favourites, unread counts and the wizard draft live here rather than in
-    // a collection of their own — they are UI state, not domain records.
-    if (before.ui !== after.ui) {
+    // Anything removed from the store is removed from the collection too.
+    for (const [id, prev] of Object.entries(prevDocs)) {
+      if (!nextDocs[id]) {
+        plan.ops.push({
+          deleteOne: { filter: versionFilter(id, prev) },
+        });
+        plan.deletes += 1;
+      }
+    }
+
+    if (plan.ops.length > 0) plans.push(plan);
+  }
+
+  const counters = after.ui.counters;
+  const countersChanged = before.ui.counters !== counters;
+
+  const run = async (session?: ClientSession) => {
+    let written = 0;
+    for (const plan of plans) {
+      let result;
+      try {
+        result = await db
+          .collection(plan.name)
+          .bulkWrite(plan.ops, { ordered: true, session });
+      } catch (error) {
+        // Duplicate `_id` on insert: somebody else created that id first.
+        if ((error as { code?: number }).code === 11000) {
+          throw new WriteConflictError(plan.name);
+        }
+        throw error;
+      }
+      if (
+        result.insertedCount !== plan.inserts ||
+        result.matchedCount !== plan.replaces ||
+        result.deletedCount !== plan.deletes
+      ) {
+        throw new WriteConflictError(plan.name);
+      }
+      written += plan.ops.length;
+    }
+
+    if (countersChanged) {
+      // `$max`, not a replace: a slower request must never move a counter
+      // backwards, or the next id minted would collide.
+      const $max: Record<string, number> = {};
+      for (const [prefix, n] of Object.entries(counters)) {
+        $max[`ui.counters.${prefix}`] = n;
+      }
       await db
         .collection("_appMeta")
-        .replaceOne({ _id: "ui" as never }, { _id: "ui", ui: after.ui } as never, {
-          upsert: true,
-        });
+        .updateOne({ _id: "ui" as never }, { $max }, { upsert: true, session });
       written += 1;
     }
+    return written;
+  };
 
+  const session = client.startSession();
+  try {
+    let written = 0;
+    try {
+      await session.withTransaction(async () => {
+        written = await run(session);
+      });
+    } catch (error) {
+      // Standalone `mongod` (local dev) has no transactions. The conditional
+      // writes above still stop a lost update; only atomicity across
+      // collections is lost, which is acceptable on a laptop.
+      if (!isTransactionsUnsupported(error)) throw error;
+      written = await run();
+    }
     return { written, fromDatabase: true };
-  } catch {
-    return { written: 0, fromDatabase: false };
+  } finally {
+    await session.endSession();
   }
+}
+
+function isTransactionsUnsupported(error: unknown): boolean {
+  const e = error as { code?: number; message?: string };
+  return (
+    e?.code === 20 ||
+    /Transaction numbers are only allowed|replica set/i.test(e?.message ?? "")
+  );
 }
 
 /**

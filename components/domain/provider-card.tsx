@@ -5,7 +5,6 @@ import { Avatar } from "@/components/ui/avatar";
 import { Rating } from "@/components/ui/rating";
 import { Button } from "@/components/ui/button";
 import { LiveVerifiedBadge } from "@/components/domain/live-verified-badge";
-import { FavoriteButton } from "@/components/domain/favorite-button";
 import { PriceDisplay } from "@/components/ui/price-display";
 import { AREA_BY_ID } from "@/lib/data/areas";
 import { formatCount, formatDuration } from "@/lib/format";
@@ -26,14 +25,13 @@ export function ProviderCard({
   className,
 }: {
   provider: Provider;
-  /** Overrides the default favourite button in the top-right corner. */
+  /** Optional control in the top-right corner. */
   action?: React.ReactNode;
   className?: string;
 }) {
   const area = AREA_BY_ID[provider.areaId];
-  const corner = action ?? (
-    <FavoriteButton providerId={provider._id} providerName={provider.bnName} />
-  );
+  // No favourite button: customers don't pick professionals, the team does.
+  const corner = action ?? null;
 
   return (
     <article
@@ -45,7 +43,7 @@ export function ProviderCard({
         className,
       )}
     >
-      <div className="absolute right-4 top-4 z-10">{corner}</div>
+      {corner ? <div className="absolute right-4 top-4 z-10">{corner}</div> : null}
 
       <div className="flex items-start gap-3.5">
         <Avatar id={provider._id} name={provider.bnName} size="lg" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Calendar, MapPin, ReceiptText, Wallet } from "lucide-react";
+import { Calendar, Hourglass, MapPin, ReceiptText, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
@@ -15,11 +15,11 @@ import { ListSkeleton } from "@/components/skeletons";
 import {
   useAreaById,
   useCategoryById,
-  useQuotesForRequest,
+  useLiveQuoteForRequest,
   useRequestById,
 } from "@/lib/api/queries";
 import { useMutations } from "@/lib/api/mutations";
-import { formatBdt, formatCount, formatDate } from "@/lib/format";
+import { formatBdt, formatDate } from "@/lib/format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { ACTIONS, EMPTY, SLOT_LABEL, URGENCY } from "@/lib/strings";
 
@@ -27,7 +27,7 @@ export function RequestDetailView({ requestId }: { requestId: string }) {
   const { data: request, isLoading, error, refetch } = useRequestById(requestId);
   const { data: category } = useCategoryById(request?.categoryId ?? null);
   const { data: area } = useAreaById(request?.areaId ?? null);
-  const { data: quotes } = useQuotesForRequest(requestId);
+  const { data: quote } = useLiveQuoteForRequest(requestId);
   const { cancelRequest } = useMutations();
   const [pending, setPending] = useState(false);
 
@@ -133,20 +133,22 @@ export function RequestDetailView({ requestId }: { requestId: string }) {
         <h2 className="flex items-center gap-2 text-lg font-semibold text-fg">
           <ReceiptText aria-hidden="true" className="size-5 text-fg-tertiary" />
           কোটেশন
-          <span className="text-sm font-normal tabular text-fg-tertiary">
-            ({formatCount((quotes ?? []).length)})
-          </span>
         </h2>
 
-        {(quotes ?? []).length === 0 ? (
-          <div className="rounded-lg border border-border bg-surface">
-            <EmptyState {...EMPTY.quotes} icon={<ReceiptText />} />
+        {/* Only the team's current offer — replaced or declined ones are history. */}
+        {quote ? (
+          <QuoteCard quote={quote} />
+        ) : request.status === "open" ? (
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-surface p-5">
+            <Hourglass aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-teal-600" />
+            <p className="text-sm text-fg-secondary">
+              আমাদের টিম আপনার কাজের জন্য উপযুক্ত পেশাদার খুঁজছে। দাম ঠিক হলেই কোটেশন এখানে
+              পাঠানো হবে — সাধারণত কয়েক ঘণ্টার মধ্যে।
+            </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {(quotes ?? []).map((q) => (
-              <QuoteCard key={q._id} quote={q} />
-            ))}
+          <div className="rounded-lg border border-border bg-surface">
+            <EmptyState {...EMPTY.quotes} icon={<ReceiptText />} />
           </div>
         )}
       </section>

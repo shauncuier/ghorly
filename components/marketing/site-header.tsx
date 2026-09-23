@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { Logo } from "@/components/marketing/logo";
 import { MobileMenu } from "@/components/marketing/mobile-menu";
-import { Button } from "@/components/ui/button";
-import { ACTIONS, ARIA, NAV } from "@/lib/strings";
+import { HeaderAuthActions } from "@/components/marketing/header-auth";
+import { ARIA, NAV } from "@/lib/strings";
 
 /**
  * Server component. The sticky background transition is pure CSS —
  * `backdrop-blur` plus a translucent surface — rather than a scroll listener,
- * so the header needs no JavaScript and no `'use client'`.
+ * so the header itself needs no `'use client'`. Only the account buttons are
+ * an island, because they depend on who is signed in.
  */
 export function SiteHeader() {
   return (
@@ -33,15 +34,8 @@ export function SiteHeader() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <Link href="/login">{ACTIONS.login}</Link>
-          </Button>
-          <Button asChild variant="secondary" size="sm" className="hidden lg:inline-flex">
-            <Link href="/register/provider">{ACTIONS.becomeProfessional}</Link>
-          </Button>
-          <Button asChild size="sm" className="hidden sm:inline-flex">
-            <Link href="/customer/request">{ACTIONS.getStarted}</Link>
-          </Button>
+          {/* Client island: swaps to "dashboard" once the session is known. */}
+          <HeaderAuthActions layout="bar" />
           <MobileMenu />
         </div>
       </div>

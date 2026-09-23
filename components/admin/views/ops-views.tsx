@@ -26,6 +26,7 @@ import {
 import { PageHeader } from "@/components/app-shell/app-shell";
 import { StatCard } from "@/components/app-shell/stat-card";
 import { CategoryIcon } from "@/components/domain/category-icon";
+import { QuotationModal } from "@/components/admin/quotation-modal";
 import { AreaChart, BarChart, DonutChart } from "@/components/charts";
 import {
   useAllBookings,
@@ -38,6 +39,7 @@ import {
   useCustomerById,
   useCustomers,
   useDisputes,
+  useLiveQuoteForRequest,
   useProviderById,
 } from "@/lib/api/queries";
 import { useMutations } from "@/lib/api/mutations";
@@ -52,6 +54,15 @@ import type { Booking, Dispute, Payment, Review, ServiceRequest } from "@/lib/ty
 
 export function AdminRequestsView() {
   const { data: requests, isLoading } = useAllRequests();
+  const [quoting, setQuoting] = useState<ServiceRequest | null>(null);
+  const all = requests ?? [];
+  const waiting = all.filter((r) => r.status === "open").length;
+
+  // Waiting-for-quote first, oldest first: the dispatch queue.
+  const rows = [...all].sort((x, y) => {
+    const rank = (r: ServiceRequest) => (r.status === "open" ? 0 : r.status === "quoted" ? 1 : 2);
+    return rank(x) - rank(y) || x.createdAt.localeCompare(y.createdAt);
+  });
 
   const columns: Column<ServiceRequest>[] = [
     {
@@ -79,11 +90,9 @@ export function AdminRequestsView() {
       hideBelow: "lg",
     },
     {
-      key: "quotes",
+      key: "quote",
       header: "কোটেশন",
-      align: "end",
-      cell: (r) => formatCount(r.quoteIds.length),
-      sortBy: (r) => r.quoteIds.length,
+      cell: (r) => <LiveQuote request={r} />,
       hideBelow: "md",
     },
     {
@@ -91,16 +100,29 @@ export function AdminRequestsView() {
       header: "অবস্থা",
       cell: (r) => <StatusBadge domain="request" status={r.status} size="sm" />,
     },
+    {
+      key: "action",
+      header: "",
+      align: "end",
+      cell: (r) => <QuoteAction request={r} onQuote={() => setQuoting(r)} />,
+    },
   ];
 
   return (
     <>
       <PageHeader
         title="অনুরোধ"
-        description={`মোট ${formatCount((requests ?? []).length, "অনুরোধ")}।`}
+        description="গ্রাহকের অনুরোধ দেখে পেশাদারের সাথে দাম ঠিক করুন, তারপর কোটেশন পাঠান।"
+        action={
+          waiting > 0 && (
+            <Badge tone="warning" size="lg" className="tabular">
+              {formatCount(waiting, "অপেক্ষমান")}
+            </Badge>
+          )
+        }
       />
       <DataTable
-        data={requests ?? []}
+        data={rows}
         columns={columns}
         getRowId={(r) => r._id}
         isLoading={isLoading}
@@ -113,13 +135,38 @@ export function AdminRequestsView() {
               <StatusBadge domain="request" status={r.status} size="sm" />
             </div>
             <span className="text-xs tabular text-fg-tertiary">
-              {formatDate(r.preferredDate, "medium")} ·{" "}
-              {formatCount(r.quoteIds.length, "কোটেশন")}
+              <CustomerName id={r.customerId} /> · {formatDate(r.preferredDate, "medium")}
             </span>
+            <LiveQuote request={r} />
+            <QuoteAction request={r} onQuote={() => setQuoting(r)} />
           </div>
         )}
       />
+      <QuotationModal request={quoting} onClose={() => setQuoting(null)} />
     </>
+  );
+}
+
+/** Who the live (or accepted) quotation names, and for how much. */
+function LiveQuote({ request }: { request: ServiceRequest }) {
+  const { data: quote } = useLiveQuoteForRequest(request._id);
+  if (!quote) return <span className="text-sm text-fg-disabled">—</span>;
+  return (
+    <span className="flex flex-col">
+      <ProviderName id={quote.providerId} />
+      <span className="text-xs tabular text-fg-tertiary">
+        {formatBdt(quote.amount)} · পাওনা {formatBdt(quote.providerPayout ?? 0)}
+      </span>
+    </span>
+  );
+}
+
+function QuoteAction({ request, onQuote }: { request: ServiceRequest; onQuote: () => void }) {
+  if (request.status !== "open" && request.status !== "quoted") return null;
+  return (
+    <Button size="sm" variant={request.status === "open" ? "primary" : "secondary"} onClick={onQuote}>
+      {request.status === "open" ? "কোটেশন পাঠান" : "নতুন কোটেশন"}
+    </Button>
   );
 }
 

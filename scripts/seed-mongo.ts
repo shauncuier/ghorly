@@ -63,7 +63,7 @@ async function main() {
   // UI state (favourites, unread counts) starts from the seed too.
   await db
     .collection("_appMeta")
-    .replaceOne({ _id: "ui" as never }, { _id: "ui", ui: state.ui } as never, {
+    .replaceOne({ _id: "ui" as never }, { _id: "ui", ui: { counters: state.ui.counters } } as never, {
       upsert: true,
     });
 

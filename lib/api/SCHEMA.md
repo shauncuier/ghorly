@@ -17,6 +17,27 @@ shapes — nothing needs translating.
 | No field starts with `$` or contains `.` | Both are illegal in Mongo field names. |
 | Money is a whole number of BDT | No floats, no currency objects. Commission is stored alongside the amount rather than recomputed. |
 
+## The flow: admin-dispatched
+
+Ghorly is not an open marketplace. Three parties, with the Ghorly team in the
+middle of every job:
+
+1. **Customer** submits a request (`SUBMIT_REQUEST`) → request `open` = waiting for the team.
+2. **Admin** phones suitable professionals offline and agrees a price, then sends
+   the customer a quotation naming one of them (`SEND_QUOTATION`): customer price
+   `amount` and the professional's `providerPayout`. Request → `quoted`. A new
+   quotation withdraws the previous one.
+3. **Customer** accepts (`ACCEPT_QUOTE`) → booking with that professional; the
+   assignment is final, commission = `amount − providerPayout`. Or declines
+   (`DECLINE_QUOTE`) → request back to `open` for the team.
+4. **Provider** sees the job in their jobs list and does it (`START_JOB`, `COMPLETE_JOB`).
+
+Customers and providers never contact each other. Every `threads` document is a
+support conversation between the team and **one** party (`kind: "customer" |
+"provider"`); `messages.senderRole` includes `admin`. Customers see a
+professional's name, photo and rating, never a phone number; providers see the
+job address, never the customer's phone.
+
 ## Collections
 
 | Collection | Key fields | References |
@@ -27,11 +48,11 @@ shapes — nothing needs translating.
 | `customers` | `bnName`, `phone`, `email`, `status`, `bookingCount` | `areaId`, `addressIds[]` |
 | `addresses` | `bnLabel`, `bnLine1`, `bnLine2`, `isDefault` | `customerId`, `areaId` |
 | `requests` | `bnTitle`, `bnDescription`, `status`, `urgency`, `preferredDate`, `preferredSlot` | `customerId`, `categoryId`, `areaId`, `addressId`, `quoteIds[]`, `bookingId` |
-| `quotes` | `amount`, `bnMessage`, `estimatedMinutes`, `status`, `validUntil` | `requestId`, `providerId`, `customerId` |
+| `quotes` | `amount`, `providerPayout`, `bnMessage` (admin's note), `estimatedMinutes`, `status`, `validUntil` | `requestId`, `providerId`, `customerId` |
 | `bookings` | `bnTitle`, `scheduledDate`, `scheduledSlot`, `amount`, `commission`, `status` | `requestId`, `quoteId`, `customerId`, `providerId`, `categoryId`, `addressId`, `paymentId`, `reviewId` |
 | `payments` | `amount`, `commission`, `method`, `status`, `reference`, `paidAt` | `bookingId`, `customerId`, `providerId` |
 | `payoutMethods` | `kind`, `bnLabel`, `reference`, `isDefault` | `ownerId` |
-| `threads` | `bnSubject`, `lastMessageAt`, `messageIds[]` | `customerId`, `providerId`, `bookingId`, `requestId` |
+| `threads` | `kind`, `bnSubject`, `lastMessageAt`, `messageIds[]` | `customerId` *or* `providerId` (one, by `kind`), `bookingId`, `requestId` |
 | `messages` | `senderRole`, `bnBody`, `sentAt`, `isRead` | `threadId`, `senderId` |
 | `reviews` | `rating`, `bnBody`, `isHidden`, `bnProviderReply` | `bookingId`, `providerId`, `customerId`, `categoryId` |
 | `verifications` | `status`, `docs[]`, `submittedAt`, `reviewedAt`, `bnNote` | `providerId` |
@@ -89,8 +110,9 @@ reason the envelope exists.
 
 `POST /api/mutate` loads the graph, runs **the same `lib/store/reducer.ts` the
 browser runs**, and persists only the documents whose identity changed.
-Accepting a quote has to decline its siblings, create a booking and a pending
-payment, and flip the request to `booked`; those cascades are written down once.
+Accepting a quotation has to create a booking and a pending payment, flip the
+request to `booked` and tell the provider in their support thread; those
+cascades are written down once.
 Re-expressing them as Mongo update pipelines would be the same logic twice,
 which is the same logic drifting apart.
 
@@ -163,8 +185,8 @@ nothing; the booking's actual `customerId` decides.
 | Session | Sees |
 |---|---|
 | signed out | catalogue only — categories, areas, providers (phones redacted), reviews |
-| customer | own requests, quotes, bookings, payments, threads + counterparty names |
-| provider | own quotes, jobs, earnings, verifications + counterparty names |
+| customer | own requests, quotations (no `providerPayout`), bookings and payments (no commission split), own support thread; providers' public profiles |
+| provider | own jobs and the requests behind them, payouts (`amount` = payout, no commission), own support thread, verification; customer names and job addresses — no open-request feed, no quotations |
 | admin | everything |
 
 This is why a guest `/api/bootstrap` returns 28 providers and 0 bookings.

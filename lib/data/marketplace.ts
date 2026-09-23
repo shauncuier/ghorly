@@ -127,13 +127,16 @@ function pad(n: number) {
   return String(n).padStart(4, "0");
 }
 
-function addThread(
-  customerId: string,
-  providerId: string,
-  subject: string,
+/**
+ * A support conversation between the Ghorly team and one party. Customers and
+ * providers never share a thread — the team relays everything.
+ */
+function addSupportThread(
+  kind: "customer" | "provider",
+  partyId: string,
   bookingId: string | null,
   requestId: string | null,
-  lines: { role: "customer" | "provider" | "system"; body: string; dayOffset: number; hour: number }[],
+  lines: { role: "customer" | "provider" | "admin" | "system"; body: string; dayOffset: number; hour: number }[],
 ) {
   th += 1;
   const threadId = `thr-${pad(th)}`;
@@ -148,8 +151,7 @@ function addThread(
       _id: id,
       threadId,
       senderRole: line.role,
-      senderId:
-        line.role === "customer" ? customerId : line.role === "provider" ? providerId : "system",
+      senderId: line.role === "admin" || line.role === "system" ? line.role : partyId,
       bnBody: line.body,
       sentAt,
       isRead: line.dayOffset < -1,
@@ -160,11 +162,12 @@ function addThread(
   const last = lines[lines.length - 1];
   threads.push({
     _id: threadId,
-    customerId,
-    providerId,
+    kind,
+    customerId: kind === "customer" ? partyId : null,
+    providerId: kind === "provider" ? partyId : null,
     bookingId,
     requestId,
-    bnSubject: subject,
+    bnSubject: "ঘরলি সাপোর্ট",
     lastMessageAt: ts(last.dayOffset, last.hour),
     messageIds,
     ...meta(ts(lines[0].dayOffset, lines[0].hour)),
@@ -228,6 +231,7 @@ PROVIDERS.forEach((provider, pIndex) => {
       providerId: provider._id,
       customerId: customer._id,
       amount,
+      providerPayout: amount - Math.round(amount * COMMISSION_RATE),
       bnMessage: `${category?.bnShortName ?? "কাজ"}টি দেখে মনে হচ্ছে ${Math.max(1, Math.round(category?.avgDurationMinutes ?? 60) / 60)} ঘণ্টার মতো লাগবে। যন্ত্রাংশ লাগলে আলাদা জানাব।`,
       estimatedMinutes: category?.avgDurationMinutes ?? 60,
       status: "accepted",
@@ -281,10 +285,14 @@ PROVIDERS.forEach((provider, pIndex) => {
 const demo = CUSTOMERS[0];
 const demoAddress = ADDRESSES.find((a) => a.customerId === demo._id)!;
 
-// 1. open request with three quotes
+// 1. a request the team has already priced: one quotation, from Ghorly,
+//    naming the professional they agreed it with.
 rq += 1;
 const openRequestId = `req-${pad(rq)}`;
-const acProviders = PROVIDERS.filter((p) => p.categoryIds.includes("cat-ac")).slice(0, 3);
+const acProvider = PROVIDERS.find((p) => p.categoryIds.includes("cat-ac"))!;
+
+qt += 1;
+const openQuoteId = `quo-${pad(qt)}`;
 
 requests.push({
   _id: openRequestId,
@@ -301,56 +309,24 @@ requests.push({
   budgetFrom: 800,
   budgetTo: 2500,
   status: "quoted",
-  quoteIds: [],
+  quoteIds: [openQuoteId],
   bookingId: null,
   ...meta(ts(-1, 9, 40)),
 });
 
-acProviders.forEach((provider, i) => {
-  qt += 1;
-  const quoteId = `quo-${pad(qt)}`;
-  requests.find((r) => r._id === openRequestId)!.quoteIds.push(quoteId);
-
-  quotes.push({
-    _id: quoteId,
-    requestId: openRequestId,
-    providerId: provider._id,
-    customerId: demo._id,
-    amount: [1200, 950, 1450][i],
-    bnMessage: [
-      "গ্যাস রিফিল ও কয়েল পরিষ্কার দুটোই লাগবে। কাজ শেষে তিন মাসের গ্যারান্টি দিই।",
-      "আগে দেখে নিই, গ্যাসের সমস্যা হলে রিফিল করে দেব। দেখার জন্য আলাদা টাকা নিই না।",
-      "কম্প্রেসর ঠিক আছে কিনা পরীক্ষা করে জানাব। সম্পূর্ণ সার্ভিসিংসহ এই দাম।",
-    ][i],
-    estimatedMinutes: [90, 75, 120][i],
-    status: "sent",
-    validUntil: shiftDays(TODAY, 3),
-    ...meta(ts(-1, 11 + i * 2)),
-  });
-
-  addThread(
-    demo._id,
-    provider._id,
-    "এসি ঠান্ডা হচ্ছে না",
-    null,
-    openRequestId,
-    [
-      { role: "system", body: "কোটেশন পাঠানো হয়েছে।", dayOffset: -1, hour: 11 + i * 2 },
-      {
-        role: "provider",
-        body: "আসসালামু আলাইকুম। এসিটি কত দিন ধরে এই সমস্যা করছে?",
-        dayOffset: -1,
-        hour: 11 + i * 2,
-      },
-      { role: "customer", body: "প্রায় এক সপ্তাহ। আগে ঠিকই ছিল।", dayOffset: -1, hour: 12 + i * 2 },
-      {
-        role: "provider",
-        body: "সম্ভবত গ্যাস কমে গেছে। কাল বিকেলে এসে দেখে নিতে পারি।",
-        dayOffset: 0,
-        hour: 9 + i,
-      },
-    ],
-  );
+quotes.push({
+  _id: openQuoteId,
+  requestId: openRequestId,
+  providerId: acProvider._id,
+  customerId: demo._id,
+  amount: 1200,
+  providerPayout: 1050,
+  bnMessage:
+    "গ্যাস রিফিল ও কয়েল পরিষ্কার দুটোই লাগবে বলে পেশাদার জানিয়েছেন। কাজ শেষে তিন মাসের গ্যারান্টি।",
+  estimatedMinutes: 90,
+  status: "sent",
+  validUntil: shiftDays(TODAY, 3),
+  ...meta(ts(-1, 13)),
 });
 
 // 2. upcoming booking
@@ -389,7 +365,8 @@ quotes.push({
   providerId: cleaner._id,
   customerId: demo._id,
   amount: 3200,
-  bnMessage: "চারজনের দল নিয়ে আসব, প্রায় পাঁচ ঘণ্টা লাগবে। সব উপকরণ আমাদের।",
+  providerPayout: 3200 - Math.round(3200 * COMMISSION_RATE),
+  bnMessage: "চারজনের দল প্রায় পাঁচ ঘণ্টায় কাজ শেষ করবে। সব উপকরণ তাঁদের।",
   estimatedMinutes: 300,
   status: "accepted",
   validUntil: shiftDays(TODAY, -1),
@@ -432,18 +409,21 @@ payments.push({
   ...meta(ts(-3, 10)),
 });
 
-addThread(
-  demo._id,
-  cleaner._id,
-  "পুরো ফ্ল্যাট পরিষ্কার",
-  upcomingBookingId,
-  upcomingRequestId,
-  [
-    { role: "system", body: "বুকিং নিশ্চিত হয়েছে।", dayOffset: -3, hour: 10 },
-    { role: "provider", body: "ধন্যবাদ। সকাল ৮টায় দল নিয়ে পৌঁছে যাব।", dayOffset: -3, hour: 11 },
-    { role: "customer", body: "ঠিক আছে। লিফট আছে, সমস্যা হবে না।", dayOffset: -2, hour: 14 },
-  ],
-);
+// The demo customer's conversation with the team, covering both jobs.
+addSupportThread("customer", demo._id, upcomingBookingId, openRequestId, [
+  { role: "customer", body: "আসসালামু আলাইকুম। পুরো ফ্ল্যাট পরিষ্কার করাতে চাই।", dayOffset: -4, hour: 15 },
+  { role: "admin", body: "ওয়ালাইকুম আসসালাম। আমরা একজন অভিজ্ঞ দল ঠিক করে দিচ্ছি।", dayOffset: -4, hour: 16 },
+  { role: "system", body: "বুকিং নিশ্চিত হয়েছে।", dayOffset: -3, hour: 10 },
+  { role: "customer", body: "এসিটাও ঠান্ডা হচ্ছে না, কেউ দেখতে পারবেন?", dayOffset: -1, hour: 10 },
+  { role: "system", body: "“এসি ঠান্ডা হচ্ছে না” — এর জন্য কোটেশন পাঠানো হয়েছে। অনুরোধের পাতায় দেখে নিশ্চিত করুন।", dayOffset: -1, hour: 13 },
+]);
+
+// The cleaner's conversation with the team about the job they were given.
+addSupportThread("provider", cleaner._id, upcomingBookingId, null, [
+  { role: "system", body: "নতুন কাজ দেওয়া হয়েছে: “পুরো ফ্ল্যাট পরিষ্কার করাতে চাই”। কাজের তালিকায় বিস্তারিত দেখুন।", dayOffset: -3, hour: 10 },
+  { role: "admin", body: "সকাল ৮টায় পৌঁছাতে পারবেন? গ্রাহক জানিয়েছেন লিফট আছে।", dayOffset: -3, hour: 11 },
+  { role: "provider", body: "জি, দল নিয়ে সময়মতো পৌঁছে যাব।", dayOffset: -2, hour: 14 },
+]);
 
 /**
  * Open requests from other customers — what the provider dashboard shows as

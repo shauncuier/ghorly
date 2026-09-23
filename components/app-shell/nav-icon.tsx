@@ -23,6 +23,7 @@ import {
   Users,
   Wallet,
   Wrench,
+  Plus,
 } from "lucide-react";
 
 /**
@@ -55,6 +56,7 @@ const MAP: Record<string, React.ElementType> = {
   "chart-column": ChartColumn,
   house: House,
   user: User,
+  plus: Plus,
 };
 
 export function NavIcon({ name, className }: { name?: string; className?: string }) {

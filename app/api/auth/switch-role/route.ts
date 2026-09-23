@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { getSession, setSessionCookie } from "@/lib/auth/session";
+import { clearSessionCookie, getSession, setSessionCookie } from "@/lib/auth/session";
+import { refreshSession } from "@/lib/auth/accounts";
 import { fail, internal, ok } from "@/lib/api/respond";
 
 export const dynamic = "force-dynamic";
@@ -27,19 +28,31 @@ export async function POST(request: Request) {
   const parsed = Body.safeParse(body);
   if (!parsed.success) return fail("invalid", "সঠিক ভূমিকা দিন।");
 
-  if (!session.roles.includes(parsed.data.role)) {
-    return fail("forbidden", "এই ভূমিকায় প্রবেশের অনুমতি নেই।");
-  }
-
   try {
-    await setSessionCookie({
-      sub: session.sub,
-      phone: session.phone,
-      roles: session.roles,
-      customerId: session.customerId,
-      providerId: session.providerId,
-      activeRole: parsed.data.role,
-    });
+    // Checked against the account as it is now, not the cookie's snapshot —
+    // otherwise a suspended or demoted user could keep switching into a role
+    // they no longer hold.
+    const current = await refreshSession(session);
+    if (!current) {
+      await clearSessionCookie();
+      return fail("unauthenticated", "লগ ইন করুন।");
+    }
+    if (!current.roles.includes(parsed.data.role)) {
+      return fail("forbidden", "এই ভূমিকায় প্রবেশের অনুমতি নেই।");
+    }
+
+    // Keeps the original expiry: switching roles must not extend a session.
+    await setSessionCookie(
+      {
+        sub: current.sub,
+        phone: current.phone,
+        roles: current.roles,
+        customerId: current.customerId,
+        providerId: current.providerId,
+        activeRole: parsed.data.role,
+      },
+      session.expiresAt,
+    );
     return ok({ activeRole: parsed.data.role });
   } catch (error) {
     return internal("switch-role", error);

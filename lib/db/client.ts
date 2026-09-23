@@ -88,8 +88,16 @@ export async function getDb(): Promise<Db | null> {
   }
 }
 
+/** The connected client, for sessions/transactions. `null` when not connected. */
+export async function getMongoClient(): Promise<MongoClient | null> {
+  const db = await getDb();
+  return db ? cache.client : null;
+}
+
 /** Used by the seed script and the ping check, which *should* fail loudly. */
 export async function requireDb(): Promise<Db> {
+  // Reuse a live connection rather than orphaning its pool.
+  if (cache.client) return cache.client.db(DB_NAME);
   const client = await createClient().connect();
   cache.client = client;
   return client.db(DB_NAME);

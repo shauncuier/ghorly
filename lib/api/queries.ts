@@ -297,25 +297,36 @@ export function useRequestById(id: string | null | undefined): QueryResult<Servi
   return row ? ready(row) : missing<ServiceRequest>();
 }
 
-/** Open requests matching the signed-in provider's services and service area. */
-export function useOpenRequestsForProvider(): QueryResult<ServiceRequest[]> {
+/**
+ * The admin's dispatch queue: requests waiting for the team to find a
+ * professional and send a quotation, oldest first so nobody waits longest.
+ */
+export function useRequestsAwaitingQuote(): QueryResult<ServiceRequest[]> {
   const state = useAppState();
-  const provider = state.entities.providers[state.session.providerId];
-
-  const rows = useMemo(() => {
-    if (!provider) return [];
-    return state.order.requests
-      .map((id) => state.entities.requests[id])
-      .filter(
-        (r) =>
-          r.status === "open" &&
-          provider.activeCategoryIds.includes(r.categoryId) &&
-          (provider.serviceAreaIds.includes(r.areaId) || provider.areaId === r.areaId),
-      )
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [state.order.requests, state.entities.requests, provider]);
-
+  const rows = useMemo(
+    () =>
+      state.order.requests
+        .map((id) => state.entities.requests[id])
+        .filter((r) => r.status === "open")
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [state.order.requests, state.entities.requests],
+  );
   return ready(rows);
+}
+
+/** The quotation currently awaiting the customer's answer, if any. */
+export function useLiveQuoteForRequest(requestId: string | null): QueryResult<Quote | null> {
+  const state = useAppState();
+  const row = useMemo(() => {
+    const request = requestId ? state.entities.requests[requestId] : undefined;
+    if (!request) return null;
+    for (let i = request.quoteIds.length - 1; i >= 0; i -= 1) {
+      const q = state.entities.quotes[request.quoteIds[i]];
+      if (q?.status === "sent" || q?.status === "accepted") return q;
+    }
+    return null;
+  }, [state.entities.requests, state.entities.quotes, requestId]);
+  return ready(row);
 }
 
 export function useQuotesForRequest(requestId: string | null): QueryResult<Quote[]> {
@@ -337,20 +348,6 @@ export function useCustomerQuotes(): QueryResult<Quote[]> {
       state.order.quotes
         .map((id) => state.entities.quotes[id])
         .filter((q) => q.customerId === owner)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [state.order.quotes, state.entities.quotes, owner],
-  );
-  return ready(rows);
-}
-
-export function useProviderQuotes(): QueryResult<Quote[]> {
-  const state = useAppState();
-  const owner = state.session.providerId;
-  const rows = useMemo(
-    () =>
-      state.order.quotes
-        .map((id) => state.entities.quotes[id])
-        .filter((q) => q.providerId === owner)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [state.order.quotes, state.entities.quotes, owner],
   );
@@ -510,14 +507,22 @@ export function useAllPayments(): QueryResult<Payment[]> {
    Messaging
    ========================================================================== */
 
-export function useThreads(as: "customer" | "provider"): QueryResult<MessageThread[]> {
+/**
+ * Support threads the session can see. A customer or provider has at most one
+ * (theirs, with the Ghorly team); the admin sees every conversation.
+ */
+export function useThreads(as: "customer" | "provider" | "admin"): QueryResult<MessageThread[]> {
   const state = useAppState();
   const owner = as === "customer" ? state.session.customerId : state.session.providerId;
   const rows = useMemo(
     () =>
       state.order.threads
         .map((id) => state.entities.threads[id])
-        .filter((t) => (as === "customer" ? t.customerId : t.providerId) === owner)
+        .filter(
+          (t) =>
+            as === "admin" ||
+            (t.kind === as && (as === "customer" ? t.customerId : t.providerId) === owner),
+        )
         .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)),
     [state.order.threads, state.entities.threads, as, owner],
   );

@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, CalendarCheck, FileText, Heart, ReceiptText } from "lucide-react";
+import { CalendarCheck, FileText, ReceiptText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { SearchInput } from "@/components/ui/search-input";
 import { StatCard } from "@/components/app-shell/stat-card";
 import { BookingCard } from "@/components/domain/booking-card";
 import { RequestCard } from "@/components/domain/request-card";
 import { ServiceChipCard } from "@/components/domain/service-card";
-import { ProviderCardCompact } from "@/components/domain/provider-card";
 import {
   BookingCardSkeleton,
   ListSkeleton,
@@ -21,25 +19,18 @@ import {
   useCustomerBookings,
   useCustomerQuotes,
   useCustomerRequests,
-  useFavorites,
-  useProviders,
 } from "@/lib/api/queries";
 import { formatCount } from "@/lib/format";
 import { ACTIONS, EMPTY } from "@/lib/strings";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 /**
  * The customer's home.
  *
- * Answers the three questions the brief sets out, top to bottom: what do I
- * need (search + popular services), what's happening (active requests,
- * upcoming booking), and who could do it (recommended providers).
+ * Two questions, top to bottom: what do I need (request a service), and
+ * what's happening (quotations to answer, active requests, upcoming booking).
+ * There is no "who could do it" — the Ghorly team picks the professional.
  */
 export function DashboardView() {
-  const router = useRouter();
-  const [query, setQuery] = useState("");
-
   const { data: customer, isLoading: loadingCustomer } = useCurrentCustomer();
   const { data: categories } = useCategories();
   const { data: requests, isLoading: loadingRequests } = useCustomerRequests();
@@ -48,11 +39,6 @@ export function DashboardView() {
     "upcoming",
     "active",
   ]);
-  const { data: favorites } = useFavorites();
-  const { data: recommended, isLoading: loadingProviders } = useProviders({
-    areaId: customer?.areaId,
-    sort: "rating",
-  });
 
   const activeRequests = (requests ?? []).filter(
     (r) => r.status === "open" || r.status === "quoted",
@@ -60,12 +46,6 @@ export function DashboardView() {
   const openQuotes = (quotes ?? []).filter((q) => q.status === "sent");
   const popular = (categories ?? []).filter((c) => c.isPopular).slice(0, 8);
 
-  function search(e: React.FormEvent) {
-    e.preventDefault();
-    router.push(
-      `/customer/services${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ""}`,
-    );
-  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -80,24 +60,20 @@ export function DashboardView() {
           </p>
         </div>
 
-        <form onSubmit={search} className="flex flex-col gap-2.5 sm:flex-row">
-          <SearchInput
-            value={query}
-            onValueChange={setQuery}
-            size="lg"
-            placeholder="যে সেবা খুঁজছেন লিখুন…"
-            className="flex-1"
-          />
-          <Button type="submit" size="lg" className="sm:px-8">
-            {ACTIONS.findService}
+        <div className="flex flex-col gap-3 rounded-xl border border-teal-200 bg-teal-50/60 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-fg-secondary">
+            সমস্যাটা জানান — আমাদের টিম উপযুক্ত পেশাদার খুঁজে দাম জানিয়ে দেবে।
+          </p>
+          <Button asChild size="lg" className="sm:px-8">
+            <Link href="/customer/request">{ACTIONS.requestService}</Link>
           </Button>
-        </form>
+        </div>
       </section>
 
       {/* ---------- at a glance ---------- */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-3">
         {loadingCustomer ? (
-          Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)
+          Array.from({ length: 3 }).map((_, i) => <StatCardSkeleton key={i} />)
         ) : (
           <>
             <StatCard
@@ -120,12 +96,6 @@ export function DashboardView() {
               icon={<CalendarCheck />}
               href="/customer/bookings"
             />
-            <StatCard
-              label="পছন্দের তালিকা"
-              value={formatCount((favorites ?? []).length)}
-              icon={<Heart />}
-              href="/customer/favorites"
-            />
           </>
         )}
       </section>
@@ -134,16 +104,14 @@ export function DashboardView() {
       <section className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold text-fg">জনপ্রিয় সেবা</h2>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/customer/services">
-              {ACTIONS.viewAll}
-              <ArrowLeft aria-hidden="true" className="rotate-180" />
-            </Link>
-          </Button>
         </div>
         <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
           {popular.map((category) => (
-            <ServiceChipCard key={category._id} category={category} />
+            <ServiceChipCard
+              key={category._id}
+              category={category}
+              href={`/customer/request?category=${category.slug}`}
+            />
           ))}
         </div>
       </section>
@@ -202,28 +170,6 @@ export function DashboardView() {
         </section>
       </div>
 
-      {/* ---------- recommended ---------- */}
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold text-fg">আপনার এলাকার পেশাদার</h2>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/customer/services">
-              {ACTIONS.viewAll}
-              <ArrowLeft aria-hidden="true" className="rotate-180" />
-            </Link>
-          </Button>
-        </div>
-
-        {loadingProviders ? (
-          <ListSkeleton count={4} />
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {(recommended ?? []).slice(0, 6).map((provider) => (
-              <ProviderCardCompact key={provider._id} provider={provider} />
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 }

@@ -1,18 +1,9 @@
-import { Suspense } from "react";
-import type { Metadata } from "next";
-import { ServicesView } from "@/components/customer/views/services-view";
-import { ProviderGridSkeleton } from "@/components/skeletons";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "সেবা খুঁজুন",
-  robots: { index: false },
-};
-
-/** `ServicesView` reads `useSearchParams`, so it needs a Suspense boundary. */
-export default function CustomerServicesPage() {
-  return (
-    <Suspense fallback={<ProviderGridSkeleton count={6} />}>
-      <ServicesView />
-    </Suspense>
-  );
+/**
+ * Retired: customers no longer browse and pick providers — they describe the job and the team assigns one.
+ * Kept as a redirect so old links and bookmarks still land somewhere useful.
+ */
+export default function Page() {
+  redirect("/customer/request");
 }

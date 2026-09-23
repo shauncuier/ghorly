@@ -81,6 +81,8 @@ export const ActionSchema = z.discriminatedUnion("type", [
     quoteId: id,
     bookingId: id,
     paymentId: id,
+    threadId: id,
+    messageId: id,
   }),
   z.object({ type: z.literal("DECLINE_QUOTE"), quoteId: id }),
   z.object({ type: z.literal("CONFIRM_BOOKING"), bookingId: id, method: paymentMethod }),
@@ -100,7 +102,15 @@ export const ActionSchema = z.discriminatedUnion("type", [
   }),
 
   z.object({ type: z.literal("ADD_ADDRESS"), address }),
-  z.object({ type: z.literal("UPDATE_ADDRESS"), addressId: id, patch: address.partial() }),
+  z.object({
+    type: z.literal("UPDATE_ADDRESS"),
+    addressId: id,
+    // Identity and ownership are not editable: a patch carrying `customerId`
+    // would move the address onto somebody else's account.
+    patch: address
+      .omit({ _id: true, customerId: true, createdAt: true, updatedAt: true })
+      .partial(),
+  }),
   z.object({ type: z.literal("DELETE_ADDRESS"), addressId: id }),
   z.object({ type: z.literal("SET_DEFAULT_ADDRESS"), addressId: id }),
 
@@ -117,24 +127,14 @@ export const ActionSchema = z.discriminatedUnion("type", [
     patch: z
       .object({
         bnName: bnText(80),
-        phone: z.string().max(20),
+        // No `phone`: accounts are linked to domain records by phone number,
+        // so letting it drift from the verified login number would let a later
+        // sign-up with that number claim this record. Changing it needs an OTP.
         email: z.string().max(120),
       })
       .partial(),
   }),
 
-  z.object({
-    type: z.literal("ACCEPT_REQUEST"),
-    requestId: id,
-    quoteId: id,
-    threadId: id,
-    messageId: id,
-    amount: money.refine((n) => n > 0, "দর শূন্যের বেশি হতে হবে"),
-    message: bnText(2000),
-    estimatedMinutes: minutes,
-  }),
-  z.object({ type: z.literal("DECLINE_REQUEST"), requestId: id }),
-  z.object({ type: z.literal("WITHDRAW_QUOTE"), quoteId: id }),
   z.object({ type: z.literal("START_JOB"), bookingId: id }),
   z.object({ type: z.literal("COMPLETE_JOB"), bookingId: id }),
   z.object({ type: z.literal("SET_BOOKING_STATUS"), bookingId: id, status: bookingStatus }),
@@ -169,11 +169,25 @@ export const ActionSchema = z.discriminatedUnion("type", [
     threadId: id,
     messageId: id,
     body: bnText(4000),
-    role: z.enum(["customer", "provider"]),
+    role: z.enum(["customer", "provider", "admin"]),
     sentAt: timestamp,
+    to: z.object({ kind: z.enum(["customer", "provider"]), id }).optional(),
   }),
   z.object({ type: z.literal("MARK_THREAD_READ"), threadId: id }),
 
+  z.object({
+    type: z.literal("SEND_QUOTATION"),
+    requestId: id,
+    quoteId: id,
+    providerId: id,
+    amount: money.refine((n) => n > 0, "দর শূন্যের বেশি হতে হবে"),
+    providerPayout: money,
+    estimatedMinutes: minutes,
+    message: z.string().trim().max(2000),
+    threadId: id,
+    messageId: id,
+  }),
+  z.object({ type: z.literal("WITHDRAW_QUOTE"), quoteId: id }),
   z.object({ type: z.literal("APPROVE_VERIFICATION"), verificationId: id, at: timestamp }),
   z.object({
     type: z.literal("REJECT_VERIFICATION"),

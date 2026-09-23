@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, MessageSquare } from "lucide-react";
+import { Calendar } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { PriceDisplay } from "@/components/ui/price-display";
@@ -10,6 +10,7 @@ import { toast } from "@/lib/toast";
 import { formatDate, formatDuration } from "@/lib/format";
 import { shiftDays, TODAY } from "@/lib/data/clock";
 import { SLOTS } from "@/lib/strings";
+import { CATEGORY_BY_ID } from "@/lib/data/categories";
 import { COMMON } from "@/lib/strings";
 import type { Provider } from "@/lib/types";
 
@@ -17,11 +18,12 @@ import type { Provider } from "@/lib/types";
 const DAYS = Array.from({ length: 7 }, (_, i) => shiftDays(TODAY, i));
 
 /**
- * Sticky booking panel on `/providers/[slug]`.
+ * Sticky request panel on `/providers/[slug]`.
  *
  * The only interactive island on the profile: the rest of the page is
- * server-rendered for SEO. Picking a day and slot here seeds the request
- * wizard so the customer doesn't re-enter what they already chose.
+ * server-rendered for SEO. It requests the *service*, not this professional —
+ * the Ghorly team assigns whoever is right for the job — and seeds the wizard
+ * with the day and slot so the customer doesn't re-enter them.
  */
 export function BookingPanel({ provider }: { provider: Provider }) {
   const router = useRouter();
@@ -32,13 +34,14 @@ export function BookingPanel({ provider }: { provider: Provider }) {
   async function request() {
     if (!slot) {
       toast.warning("একটি সময় বেছে নিন", {
-        description: "কখন আসতে হবে জানালে পেশাদার দ্রুত সাড়া দিতে পারবেন।",
+        description: "কখন আসতে হবে জানালে আমাদের টিম দ্রুত পেশাদার ঠিক করতে পারবে।",
       });
       return;
     }
     setPending(true);
+    const category = CATEGORY_BY_ID[provider.categoryIds[0]];
     const params = new URLSearchParams({
-      provider: provider.slug,
+      ...(category ? { category: category.slug } : {}),
       date: day,
       slot,
     });
@@ -106,22 +109,11 @@ export function BookingPanel({ provider }: { provider: Provider }) {
       <div className="flex flex-col gap-2.5 border-t border-border-subtle pt-4">
         <Button block loading={pending} onClick={request}>
           <Calendar aria-hidden="true" />
-          সেবার অনুরোধ করুন
-        </Button>
-        <Button
-          variant="secondary"
-          block
-          onClick={() =>
-            toast.info("বার্তা পাঠাতে লগ ইন করুন", {
-              description: "লগ ইন করলে সরাসরি পেশাদারের সাথে কথা বলতে পারবেন।",
-            })
-          }
-        >
-          <MessageSquare aria-hidden="true" />
-          বার্তা পাঠান
+          এই সেবার জন্য অনুরোধ করুন
         </Button>
         <p className="text-center text-xs text-fg-tertiary">
-          অনুরোধ পাঠাতে কোনো খরচ নেই।
+          অনুরোধ পাঠাতে কোনো খরচ নেই। ঘরলি টিম আপনার কাজের জন্য উপযুক্ত পেশাদার ঠিক করে দাম
+          জানাবে।
         </p>
       </div>
     </div>

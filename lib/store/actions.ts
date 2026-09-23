@@ -2,6 +2,8 @@ import type { AppState } from "@/lib/store/types";
 import type {
   Address,
   BookingStatus,
+  Message,
+  MessageThread,
   PaymentMethodKind,
   RequestDraft,
   Role,
@@ -36,7 +38,9 @@ export type Action =
   | { type: "SUBMIT_REQUEST"; requestId: string; draft: RequestDraft }
   /* customer */
   | { type: "CANCEL_REQUEST"; requestId: string }
-  | { type: "ACCEPT_QUOTE"; quoteId: string; bookingId: string; paymentId: string }
+  // `threadId`/`messageId` post "new job assigned" into the provider's support
+  // thread (the thread is created if the provider has none yet).
+  | { type: "ACCEPT_QUOTE"; quoteId: string; bookingId: string; paymentId: string; threadId: string; messageId: string }
   | { type: "DECLINE_QUOTE"; quoteId: string }
   | { type: "CONFIRM_BOOKING"; bookingId: string; method: PaymentMethodKind }
   | { type: "CANCEL_BOOKING"; bookingId: string; reason: string }
@@ -48,11 +52,8 @@ export type Action =
   | { type: "SET_DEFAULT_ADDRESS"; addressId: string }
   | { type: "ADD_PAYOUT_METHOD"; id: string; kind: PaymentMethodKind; label: string; reference: string }
   | { type: "DELETE_PAYOUT_METHOD"; id: string }
-  | { type: "UPDATE_CUSTOMER_PROFILE"; patch: { bnName?: string; phone?: string; email?: string } }
+  | { type: "UPDATE_CUSTOMER_PROFILE"; patch: { bnName?: string; email?: string } }
   /* provider */
-  | { type: "ACCEPT_REQUEST"; requestId: string; quoteId: string; threadId: string; messageId: string; amount: number; message: string; estimatedMinutes: number }
-  | { type: "DECLINE_REQUEST"; requestId: string }
-  | { type: "WITHDRAW_QUOTE"; quoteId: string }
   | { type: "START_JOB"; bookingId: string }
   | { type: "COMPLETE_JOB"; bookingId: string }
   | { type: "TOGGLE_SERVICE_OFFERED"; categoryId: string }
@@ -63,9 +64,37 @@ export type Action =
   | { type: "SUBMIT_VERIFICATION_DOC"; kind: string }
   | { type: "REQUEST_PAYOUT" }
   /* messaging */
-  | { type: "SEND_MESSAGE"; threadId: string; messageId: string; body: string; role: "customer" | "provider"; sentAt: string }
+  // Every thread is between the Ghorly team and one party. Sending into a
+  // thread id that doesn't exist yet opens it: for a customer or provider it
+  // is their own support thread; the admin names who it is `to`.
+  | {
+      type: "SEND_MESSAGE";
+      threadId: string;
+      messageId: string;
+      body: string;
+      role: "customer" | "provider" | "admin";
+      sentAt: string;
+      to?: { kind: "customer" | "provider"; id: string };
+    }
   | { type: "MARK_THREAD_READ"; threadId: string }
+  // Pushed by /api/messages/stream — browser-only, never sent to the server.
+  | { type: "RECEIVE_MESSAGE"; message: Message; thread: MessageThread; unread: boolean }
   /* admin */
+  // The admin agreed a price with a provider offline and now offers it to the
+  // customer. Replaces any quotation still open on the request.
+  | {
+      type: "SEND_QUOTATION";
+      requestId: string;
+      quoteId: string;
+      providerId: string;
+      amount: number;
+      providerPayout: number;
+      estimatedMinutes: number;
+      message: string;
+      threadId: string;
+      messageId: string;
+    }
+  | { type: "WITHDRAW_QUOTE"; quoteId: string }
   | { type: "APPROVE_VERIFICATION"; verificationId: string; at: string }
   | { type: "REJECT_VERIFICATION"; verificationId: string; note: string; at: string }
   | { type: "SUSPEND_USER"; id: string; kind: "customer" | "provider" }

@@ -16,7 +16,7 @@ import type { Action, Dispatch } from "@/lib/store/actions";
 import { reducer } from "@/lib/store/reducer";
 import { buildEmptyState } from "@/lib/store/initial-state";
 import { toast } from "@/lib/toast";
-import type { Role } from "@/lib/types";
+import type { Message, MessageThread, Role } from "@/lib/types";
 
 const STORAGE_KEY = "ghorly.state.v1";
 
@@ -44,6 +44,7 @@ const LOCAL_ONLY: ReadonlySet<Action["type"]> = new Set([
   "DRAFT_RESET",
   "TOGGLE_FAVORITE",
   "MARK_THREAD_READ",
+  "RECEIVE_MESSAGE",
   "RESET_DEMO",
   "SET_ROLE",
 ]);
@@ -202,6 +203,58 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSource("offline");
     }
   }, []);
+
+  /* ---------------- live messages ---------------- */
+
+  // While signed in, hold one server-sent-events connection for new messages
+  // and fold each into the store the moment it arrives — the open conversation
+  // updates and the unread badge ticks without a reload. Keyed on the account
+  // and role, so switching role reconnects under the new identity.
+  const liveKey = serverSession ? `${serverSession.accountId}:${serverSession.activeRole}` : null;
+  useEffect(() => {
+    if (!liveKey || typeof EventSource === "undefined") return;
+    const viewer = sessionRef.current?.activeRole;
+
+    let source: EventSource | null = new EventSource("/api/messages/stream");
+    let poll: number | null = null;
+    let dropped = false;
+
+    source.addEventListener("message", (e) => {
+      const { message, thread } = JSON.parse((e as MessageEvent<string>).data) as {
+        message: Message;
+        thread: MessageThread;
+      };
+      rawDispatch({
+        type: "RECEIVE_MESSAGE",
+        message,
+        thread,
+        // Anything not written by the viewer's own side counts as new.
+        unread: message.senderRole !== viewer,
+      });
+    });
+
+    source.addEventListener("ready", () => {
+      // After a reconnect, catch up on anything sent while we were offline.
+      if (dropped) void refresh();
+      dropped = false;
+    });
+
+    source.onerror = () => {
+      dropped = true; // EventSource retries by itself.
+    };
+
+    // No change streams on this database (standalone mongod): poll instead.
+    source.addEventListener("unsupported", () => {
+      source?.close();
+      source = null;
+      poll = window.setInterval(() => void refresh(), 5000);
+    });
+
+    return () => {
+      source?.close();
+      if (poll !== null) window.clearInterval(poll);
+    };
+  }, [liveKey, refresh]);
 
   /* ---------------- dispatch ---------------- */
 

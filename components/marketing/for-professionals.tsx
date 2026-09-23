@@ -6,7 +6,7 @@ import { formatBdt, formatCount, formatPercent, toBn } from "@/lib/format";
 import { ACTIONS } from "@/lib/strings";
 
 const BENEFITS = [
-  { icon: Users, title: "নতুন গ্রাহক পান", body: "আপনার এলাকার কাজের অনুরোধ সরাসরি আপনার কাছে আসবে।" },
+  { icon: Users, title: "নতুন গ্রাহক পান", body: "ঘরলি টিম আপনার এলাকার কাজ আপনাকে দেবে — গ্রাহক খোঁজার ঝামেলা নেই।" },
   { icon: CalendarCheck, title: "কাজ গুছিয়ে রাখুন", body: "কোন দিন কোথায় কাজ — সব এক জায়গায়।" },
   { icon: Star, title: "সুনাম গড়ুন", body: "প্রতিটি ভালো কাজ আপনার রেটিং বাড়াবে।" },
   { icon: Wallet, title: "আয়ের হিসাব রাখুন", body: "কত আয় হলো, কত বাকি — পরিষ্কার হিসাব।" },
