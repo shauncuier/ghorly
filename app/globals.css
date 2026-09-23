@@ -1,26 +1,397 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   Ghorly — design tokens
+   Raw palette + semantic aliases live in :root as plain CSS vars.
+   @theme inline maps them into Tailwind's namespaces.
+   ========================================================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Light only, deliberately. Also keeps native form controls, scrollbars and
+     autofill highlights light on a dark-mode OS. */
+  color-scheme: light;
+
+  /* ---- neutral: cool charcoal with a faint green cast, to sit with teal ---- */
+  --ink-50: #f7f8f8;
+  --ink-100: #eef0f0;
+  --ink-200: #dfe2e2;
+  --ink-300: #c6cbcb;
+  --ink-400: #9aa1a1;
+  --ink-500: #6f7777;
+  --ink-600: #525a5a;
+  --ink-700: #3e4545;
+  --ink-800: #2a3030;
+  --ink-900: #1b2020;
+  --ink-950: #0f1313;
+
+  /* ---- accent: emerald-teal. The one accent. ---- */
+  --teal-50: #eefbf6;
+  --teal-100: #d3f5e7;
+  --teal-200: #a9ebd3;
+  --teal-300: #72dbb8;
+  --teal-400: #3cc29a;
+  --teal-500: #16a882;  /* decorative fills / icons only — fails AA for white text */
+  --teal-600: #0a7f63;  /* solid button background — white text passes AA */
+  --teal-700: #076952;  /* teal text on white, button hover */
+  --teal-800: #0a5544;
+  --teal-900: #0a4539;
+  --teal-950: #032822;
+
+  /* ---- status: green / amber / red only ---- */
+  --success-50: #ecfdf3;
+  --success-100: #d1fadf;
+  --success-500: #12b76a;
+  --success-600: #039855;
+  --success-700: #027a48;
+
+  --warning-50: #fffaeb;
+  --warning-100: #fef0c7;
+  --warning-500: #f79009;
+  --warning-600: #dc6803;
+  --warning-700: #b54708;
+
+  --danger-50: #fef3f2;
+  --danger-100: #fee4e2;
+  --danger-500: #f04438;
+  --danger-600: #d92d20;
+  --danger-700: #b42318;
+
+  /* ---- surfaces ---- */
+  --surface: #ffffff;
+  --surface-subtle: #fafbfb;  /* page background */
+  --surface-muted: #f4f6f6;   /* inset panels, table headers */
+  --surface-accent: var(--teal-50);
+  --surface-inverse: var(--ink-950);
+  --surface-overlay: rgb(15 19 19 / 0.45);
+
+  /* ---- borders ---- */
+  --border: #e4e7e7;
+  --border-subtle: #eef0f0;
+  --border-strong: #cfd4d4;
+  --border-accent: var(--teal-200);
+  --border-focus: var(--teal-600);
+
+  /* ---- text ---- */
+  --text-primary: var(--ink-950);
+  --text-secondary: var(--ink-600);
+  --text-tertiary: var(--ink-500);
+  --text-disabled: var(--ink-400);
+  --text-inverse: #ffffff;
+  --text-accent: var(--teal-700);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* ===================== fonts =====================
+     Anek Bangla carries all UI text. Nirmala UI ships on Windows, so the
+     display:swap flash shows real Bangla rather than tofu boxes. */
+  --font-sans: var(--font-anek), "Noto Sans Bengali", "Nirmala UI", "Vrinda", system-ui, sans-serif;
+  --font-display: var(--font-anek), "Noto Sans Bengali", "Nirmala UI", system-ui, sans-serif;
+  --font-latin: var(--font-inter), system-ui, -apple-system, sans-serif;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --default-font-family: var(--font-sans);
+  --default-letter-spacing: 0;  /* never negative on Bangla — it breaks the matra */
+
+  /* ===================== type scale =====================
+     Bangla-tuned. Line-heights are PAIRED to each size so correct leading is
+     automatic and nobody has to remember. Floors: 1.7 body, 1.18 display.
+     --text-xs is 13px, not 12px: Bengali conjuncts turn to mush below that. */
+  --text-xs: 0.8125rem;    --text-xs--line-height: 1.60;
+  --text-sm: 0.875rem;     --text-sm--line-height: 1.65;
+  --text-base: 1rem;       --text-base--line-height: 1.75;
+  --text-lg: 1.125rem;     --text-lg--line-height: 1.65;
+  --text-xl: 1.375rem;     --text-xl--line-height: 1.50;
+  --text-2xl: 1.625rem;    --text-2xl--line-height: 1.42;
+  --text-3xl: 2rem;        --text-3xl--line-height: 1.34;
+  --text-4xl: 2.5rem;      --text-4xl--line-height: 1.28;
+  --text-5xl: 3.125rem;    --text-5xl--line-height: 1.22;
+  --text-6xl: 3.75rem;     --text-6xl--line-height: 1.18;
+
+  /* ===================== colors ===================== */
+  --color-ink-50: var(--ink-50);
+  --color-ink-100: var(--ink-100);
+  --color-ink-200: var(--ink-200);
+  --color-ink-300: var(--ink-300);
+  --color-ink-400: var(--ink-400);
+  --color-ink-500: var(--ink-500);
+  --color-ink-600: var(--ink-600);
+  --color-ink-700: var(--ink-700);
+  --color-ink-800: var(--ink-800);
+  --color-ink-900: var(--ink-900);
+  --color-ink-950: var(--ink-950);
+
+  --color-teal-50: var(--teal-50);
+  --color-teal-100: var(--teal-100);
+  --color-teal-200: var(--teal-200);
+  --color-teal-300: var(--teal-300);
+  --color-teal-400: var(--teal-400);
+  --color-teal-500: var(--teal-500);
+  --color-teal-600: var(--teal-600);
+  --color-teal-700: var(--teal-700);
+  --color-teal-800: var(--teal-800);
+  --color-teal-900: var(--teal-900);
+  --color-teal-950: var(--teal-950);
+
+  --color-success-50: var(--success-50);
+  --color-success-100: var(--success-100);
+  --color-success-500: var(--success-500);
+  --color-success-600: var(--success-600);
+  --color-success-700: var(--success-700);
+
+  --color-warning-50: var(--warning-50);
+  --color-warning-100: var(--warning-100);
+  --color-warning-500: var(--warning-500);
+  --color-warning-600: var(--warning-600);
+  --color-warning-700: var(--warning-700);
+
+  --color-danger-50: var(--danger-50);
+  --color-danger-100: var(--danger-100);
+  --color-danger-500: var(--danger-500);
+  --color-danger-600: var(--danger-600);
+  --color-danger-700: var(--danger-700);
+
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-accent: var(--surface-accent);
+  --color-surface-inverse: var(--surface-inverse);
+  --color-overlay: var(--surface-overlay);
+
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-border-accent: var(--border-accent);
+  --color-border-focus: var(--border-focus);
+
+  --color-fg: var(--text-primary);
+  --color-fg-secondary: var(--text-secondary);
+  --color-fg-tertiary: var(--text-tertiary);
+  --color-fg-disabled: var(--text-disabled);
+  --color-fg-inverse: var(--text-inverse);
+  --color-fg-accent: var(--text-accent);
+
+  /* aliases Tailwind's own base styles look for */
+  --color-background: var(--surface-subtle);
+  --color-foreground: var(--text-primary);
+
+  /* ===================== radius ===================== */
+  --radius-xs: 0.375rem;    /*  6px — chips, tiny badges */
+  --radius-sm: 0.5rem;      /*  8px — small inputs, dots */
+  --radius-md: 0.625rem;    /* 10px — buttons, inputs    */
+  --radius-lg: 0.875rem;    /* 14px — cards              */
+  --radius-xl: 1.125rem;    /* 18px — modals, sheets     */
+  --radius-2xl: 1.5rem;     /* 24px — hero panels        */
+  --radius-full: 9999px;
+
+  /* ===================== shadows =====================
+     Ink-tinted, low opacity, layered. Never a flat black blur. */
+  --shadow-2xs: 0 1px 1px 0 rgb(15 19 19 / .03);
+  --shadow-xs: 0 1px 2px 0 rgb(15 19 19 / .05);
+  --shadow-sm: 0 1px 3px 0 rgb(15 19 19 / .06), 0 1px 2px -1px rgb(15 19 19 / .04);
+  --shadow-md: 0 4px 8px -2px rgb(15 19 19 / .06), 0 2px 4px -2px rgb(15 19 19 / .04);
+  --shadow-lg: 0 12px 20px -4px rgb(15 19 19 / .07), 0 4px 8px -4px rgb(15 19 19 / .04);
+  --shadow-xl: 0 24px 40px -8px rgb(15 19 19 / .10), 0 8px 16px -8px rgb(15 19 19 / .05);
+  --shadow-focus: 0 0 0 4px rgb(10 127 99 / .14);
+
+  /* ===================== motion ===================== */
+  --ease-standard: cubic-bezier(.2, 0, 0, 1);
+  --ease-out-quint: cubic-bezier(.22, 1, .36, 1);
+  --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
+
+  /* ===================== layout ===================== */
+  --breakpoint-3xl: 90rem;       /* 1440 */
+  --container-page: 80rem;       /* 1280 — marketing content */
+  --container-dashboard: 90rem;  /* 1440 — dashboards, per spec */
+  --spacing-header: 4rem;
+  --spacing-bottomnav: 4.25rem;
+
+  /* ===================== animations ===================== */
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-fade-in: fade-in var(--duration-base) var(--ease-standard);
+  --animate-fade-out: fade-out var(--duration-fast) var(--ease-standard);
+  --animate-slide-up: slide-up var(--duration-slow) var(--ease-out-quint);
+  --animate-slide-in-right: slide-in-right var(--duration-slow) var(--ease-out-quint);
+  --animate-slide-in-bottom: slide-in-bottom var(--duration-slow) var(--ease-out-quint);
+  --animate-scale-in: scale-in var(--duration-base) var(--ease-out-quint);
+  --animate-scale-out: scale-out var(--duration-fast) var(--ease-standard);
+  --animate-accordion-down: accordion-down var(--duration-base) var(--ease-standard);
+  --animate-accordion-up: accordion-up var(--duration-base) var(--ease-standard);
+
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slide-in-right {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes slide-in-bottom {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(.97); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes scale-out {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(.97); }
+  }
+  @keyframes accordion-down {
+    from { height: 0; }
+    to { height: var(--radix-accordion-content-height); }
+  }
+  @keyframes accordion-up {
+    from { height: var(--radix-accordion-content-height); }
+    to { height: 0; }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* Next 16 no longer overrides this, so <html> also carries
+       data-scroll-behavior="smooth" to keep navigation snapping to top. */
+    scroll-behavior: smooth;
+    scroll-padding-top: var(--spacing-header);
+  }
+
+  body {
+    background: var(--color-surface-subtle);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;  /* no faux-bold on Bangla */
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-border-focus);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+
+  ::selection {
+    background: var(--color-teal-100);
+    color: var(--color-teal-900);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
+
+/* ==========================================================================
+   Utilities
+   ========================================================================== */
+
+@utility container-page {
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--container-page);
+  padding-inline: 1rem;
+  @media (width >= 48rem) {
+    padding-inline: 1.5rem;
+  }
+  @media (width >= 64rem) {
+    padding-inline: 2rem;
+  }
+}
+
+@utility container-dashboard {
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--container-dashboard);
+  padding-inline: 1rem;
+  @media (width >= 48rem) {
+    padding-inline: 1.5rem;
+  }
+  @media (width >= 64rem) {
+    padding-inline: 2rem;
+  }
+}
+
+/* Latin-only fragments: the GHORLY wordmark, bKash/Visa, email addresses. */
+@utility font-latin {
+  font-family: var(--font-latin);
+}
+
+/* Bangla digits align in columns — Anek carries tnum. */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bangla-safe line clamping.
+   `-webkit-line-clamp` derives its box height from line-height alone, but
+   Bengali below-line vowel signs (ু ূ ৃ) and conjunct tails paint past that
+   box — so a plain `clamp-2` shaves ~2px off the last line's ink and the
+   text reads as broken. Clipping happens at the *padding* edge, so a little
+   padding-bottom gives that ink room while the clamp still works.
+   Use these instead of `line-clamp-*` anywhere the text is Bangla. */
+@utility clamp-1 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  padding-bottom: 0.18em;
+}
+
+@utility clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  padding-bottom: 0.18em;
+}
+
+@utility clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  padding-bottom: 0.18em;
+}
+
+/* Bangla-safe single-line ellipsis.
+   Tailwind's `truncate` sets `white-space: nowrap`, which makes the box
+   exactly one line-height tall — and Bengali ink sits lower than that, so
+   descenders get shaved. Always use this instead of `truncate` on Bangla. */
+@utility truncate-bn {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-bottom: 0.2em;
+}
+
+/* Skeleton shimmer surface. */
+@utility shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-ink-100) 0%,
+    var(--color-ink-50) 40%,
+    var(--color-ink-100) 80%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+@custom-variant hocus (&:hover, &:focus-visible);

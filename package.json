@@ -1,17 +1,33 @@
 {
-  "name": "servora",
+  "name": "ghorly",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:seed": "tsx --env-file-if-exists=.env.local scripts/seed-mongo.ts",
+    "db:reset": "tsx --env-file-if-exists=.env.local scripts/seed-mongo.ts",
+    "db:ping": "tsx --env-file-if-exists=.env.local scripts/db-ping.ts",
+    "db:verify": "tsx --env-file-if-exists=.env.local scripts/db-verify.ts",
+    "db:inspect": "tsx --env-file-if-exists=.env.local scripts/db-inspect.ts",
+    "db:fallback": "tsx --env-file-if-exists=.env.local scripts/db-fallback-test.ts",
+    "sms:check": "tsx --env-file-if-exists=.env.local scripts/sms-test.ts"
   },
   "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "jose": "^6.2.12",
+    "lucide-react": "^1.47.0",
+    "mongodb": "^7.6.0",
     "next": "16.3.5",
+    "radix-ui": "^1.6.7",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -21,6 +37,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }
